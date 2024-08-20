@@ -39,8 +39,8 @@ N_CLS = 10
 BS = 128
 DATA_DIR = Path('/tmp/data')
 LR = 0.01
-N_EPOCHS = 20
-T_MAX = N_EPOCHS
+N_EPOCHS = 500
+T_MAX = 50
 SGD_MOM = 0.9
 
 # Build feature extraction layers based on spec
