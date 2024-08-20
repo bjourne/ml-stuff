@@ -1,0 +1,161 @@
+# Copyright (C) 2024 Björn Lindqvist
+#
+# VGG16 from scratch and trained on CIFAR10.
+from itertools import islice
+from pathlib import Path
+from torch.nn.functional import (
+    cross_entropy,
+    mse_loss, one_hot
+)
+from torch.nn import (
+    AvgPool2d,
+    BatchNorm2d,
+    Conv2d,
+    Dropout,
+    Linear,
+    MaxPool2d,
+    Module,
+    Parameter,
+    ReLU,
+    Sequential,
+    init
+)
+from torch.optim import SGD
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.utils.data import DataLoader
+from torchinfo import summary
+from torchtoolbox.transform import Cutout
+from torchvision.datasets import CIFAR10
+from torchvision.transforms import (
+    Compose,
+    Normalize,
+    RandomCrop, RandomHorizontalFlip,
+    ToTensor
+)
+
+import torch
+
+N_CLS = 10
+BS = 128
+DATA_DIR = Path('/tmp/data')
+LR = 0.01
+N_EPOCHS = 20
+T_MAX = N_EPOCHS
+SGD_MOM = 0.9
+
+# Build feature extraction layers based on spec
+def make_vgg_layers(spec):
+    n_chans_in = 3
+    for v in spec:
+        if type(v) == int:
+            yield Conv2d(n_chans_in, v, 3, padding = 1)
+            yield BatchNorm2d(v)
+            yield ReLU()
+            n_chans_in = v
+        elif v == 'M':
+            yield MaxPool2d(2)
+        else:
+            assert False
+
+VGG16_LAYERS = [
+    64, 64, 'M',
+    128, 128, 'M',
+    256, 256, 256, 'M',
+    512, 512, 512, 'M',
+    512, 512, 512, 'M'
+]
+
+class VGG16(Module):
+    def __init__(self):
+        super(VGG16, self).__init__()
+        layers = list(make_vgg_layers(VGG16_LAYERS))
+        self.features = Sequential(*layers)
+        self.classifier = Sequential(
+            Linear(512, 4096),
+            ReLU(),
+            Dropout(0.5),
+            Linear(4096, 4096),
+            ReLU(),
+            Dropout(0.5),
+            Linear(4096, N_CLS)
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.reshape(x.shape[0], -1)
+        return self.classifier(x)
+
+def load_data():
+    norm = Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    trans_tr = Compose([
+        RandomCrop(32, padding=4),
+        Cutout(),
+        RandomHorizontalFlip(),
+        ToTensor(),
+        norm
+    ])
+    trans_te = Compose([ToTensor(), norm])
+    d_tr = CIFAR10(
+        root=DATA_DIR,
+        train=True,
+        download=True,
+        transform=trans_tr
+    )
+    l_tr = DataLoader(d_tr, batch_size=BS, shuffle=False, drop_last=True)
+    d_te = CIFAR10(
+        root=DATA_DIR,
+        train=False,
+        download=False,
+        transform=trans_te
+    )
+    l_te = DataLoader(d_te, batch_size=BS, shuffle=True, drop_last=True)
+    return l_tr, l_te
+
+def propagate_epoch(net, opt, loader, epoch):
+    phase = 'train' if net.training else 'test'
+    args = phase, epoch, N_EPOCHS
+    print('== %s %3d/%3d ==' % args)
+
+    tot_loss = 0
+    tot_acc = 0
+    #n = 3
+    n = len(loader)
+    for i, (x, y) in enumerate(islice(loader, n)):
+        if net.training:
+            opt.zero_grad()
+        yh = net(x)
+        loss = cross_entropy(yh, y)
+        if net.training:
+            loss.backward()
+            opt.step()
+        loss = loss.item()
+        acc = (yh.argmax(1) == y).sum().item() / BS
+        print('%4d/%4d, loss/acc: %.4f/%.2f' % (i, n, loss, acc))
+        tot_loss += loss
+        tot_acc += acc
+    return tot_loss / n, tot_acc / n
+
+def main():
+    tr_l, te_l = load_data()
+    net = VGG16()
+    summary(net, input_size = (1, 3, 32, 32), device = 'cpu')
+    opt = SGD(net.parameters(), LR, SGD_MOM)
+    sched = CosineAnnealingLR(opt, T_max=T_MAX)
+    max_te_acc = 0
+    for i in range(N_EPOCHS):
+        net.train()
+        tr_loss, tr_acc = propagate_epoch(net, opt, tr_l, i)
+        sched.step()
+
+        net.eval()
+        with torch.no_grad():
+            te_loss, te_acc = propagate_epoch(net, opt, te_l, i)
+        max_te_acc = max(max_te_acc, te_acc)
+        fmt = 'losses %5.3f/%5.3f acc %5.3f/%5.3f, best acc %5.3f'
+
+        print(fmt % (tr_loss, te_loss,
+                     tr_acc, te_acc,
+                     max_te_acc))
+
+
+main()
