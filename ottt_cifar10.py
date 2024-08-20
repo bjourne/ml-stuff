@@ -95,7 +95,7 @@ class OnlineLIFNode(Module):
 
         # Maybe soft reset
         spike_d = spike.detach()
-         self.v = self.v - spike_d * V_THRESH
+        self.v = self.v - spike_d * V_THRESH
 
         with torch.no_grad():
             spike_d = spike.clone().detach()
@@ -200,7 +200,8 @@ class OnlineSpikingVGG(Module):
         cfg = [64, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512]
         for v in cfg:
             if v == 'M':
-                layers += [AvgPool2d(2, 2)]
+                # Why avg and not max?
+                layers += [AvgPool2d(2)]
             elif type(v) == int:
                 conv2d = ScaledWSConv2d(n_chan_in, v)
                 if not first_conv:
@@ -227,11 +228,11 @@ def propagate_batch(net, x, y):
         loss += ls.item()
         if net.training:
             ls.backward()
-    acc = (tot_yh.argmax(1) == y).float().sum().item() / BS
+    acc = (tot_yh.argmax(1) == y).sum().item() / BS
     return loss, acc
 
 def propagate_all(net, opt, loader, epoch, writer):
-    phase = 'train' if net.train else 'test'
+    phase = 'train' if net.training else 'test'
     args = phase, epoch, N_EPOCHS
     print('== %s %3d/%3d ==' % args)
 
@@ -239,10 +240,10 @@ def propagate_all(net, opt, loader, epoch, writer):
     tot_acc = 0
     n = len(loader)
     for i, (x, y) in enumerate(islice(loader, n)):
-        if net.train:
+        if net.training:
             opt.zero_grad()
         loss, acc = propagate_batch(net, x, y)
-        if net.train:
+        if net.training:
             opt.step()
         print('%4d/%4d, loss/acc: %.4f/%.2f' % (i, n, loss, acc))
         tot_loss += loss
@@ -254,17 +255,15 @@ def propagate_all(net, opt, loader, epoch, writer):
     return tot_loss, tot_acc
 
 def main():
+    norm = Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     trans_tr = Compose([
         RandomCrop(32, padding=4),
         Cutout(),
         RandomHorizontalFlip(),
         ToTensor(),
-        Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+        norm
     ])
-    trans_te = Compose([
-        ToTensor(),
-        Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-    ])
+    trans_te = Compose([ToTensor(), norm])
     d_tr = CIFAR10(
         root=DATA_DIR,
         train=True,
@@ -306,7 +305,8 @@ def main():
         lr_scheduler.step()
 
         net.eval()
-        test_loss, test_acc = propagate_all(net, opt, l_te, epoch, writer)
+        with torch.no_grad():
+            test_loss, test_acc = propagate_all(net, opt, l_te, epoch, writer)
 
         save_max = test_acc > max_test_acc
         max_test_acc = max(max_test_acc, test_acc)
