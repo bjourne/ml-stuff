@@ -84,7 +84,6 @@ class VGG16(Module):
         for m in self.modules():
             if isinstance(m, Conv2d):
                 kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-                constant_(m.bias, 0)
             elif isinstance(m, BatchNorm2d):
                 constant_(m.weight, 1)
                 constant_(m.bias, 0)
