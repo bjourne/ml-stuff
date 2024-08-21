@@ -42,7 +42,7 @@ T_MAX = 50
 SGD_MOM = 0.9
 
 # Build feature extraction layers based on spec
-def make_vgg_layers(spec):
+def make_layers(spec):
     n_chans_in = 3
     for v in spec:
         if type(v) == int:
@@ -69,7 +69,7 @@ FEATURE_LAYERS = [
 class VGG16(Module):
     def __init__(self):
         super(VGG16, self).__init__()
-        layers = list(make_vgg_layers(FEATURE_LAYERS))
+        layers = list(make_layers(FEATURE_LAYERS))
         self.features = Sequential(*layers)
         self.classifier = Sequential(
             Linear(512, 4096),
@@ -95,34 +95,6 @@ class VGG16(Module):
         x = x.view(x.size(0), -1)
         return self.classifier(x)
 
-
-def load_data():
-    norm = Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-    trans_tr = Compose([
-        RandomCrop(32, padding=4),
-        Cutout(),
-        RandomHorizontalFlip(),
-        ToTensor(),
-        norm
-    ])
-    trans_te = Compose([ToTensor(), norm])
-    d_tr = CIFAR10(
-        root=DATA_DIR,
-        train=True,
-        download=True,
-        transform=trans_tr
-    )
-    l_tr = DataLoader(d_tr, batch_size=BS, shuffle=False, drop_last=True)
-    d_te = CIFAR10(
-        root=DATA_DIR,
-        train=False,
-        download=False,
-        transform=trans_te
-    )
-    l_te = DataLoader(d_te, batch_size=BS, shuffle=True, drop_last=True)
-    return l_tr, l_te
-
-
 def propagate_epoch(net, opt, loader, epoch):
     phase = "train" if net.training else "test"
     args = phase, epoch, N_EPOCHS
@@ -147,7 +119,26 @@ def propagate_epoch(net, opt, loader, epoch):
 
 
 def main():
-    tr_l, te_l = load_data()
+    norm = Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+    trans_tr = Compose([
+        RandomCrop(32, padding=4),
+        Cutout(),
+        RandomHorizontalFlip(),
+        ToTensor(),
+        norm
+    ])
+    trans_te = Compose([ToTensor(), norm])
+    d_tr = CIFAR10(DATA_DIR, True,
+        download=True,
+        transform=trans_tr
+    )
+    l_tr = DataLoader(d_tr, batch_size=BS, shuffle=False, drop_last=True)
+    d_te = CIFAR10(DATA_DIR, False,
+        download=False,
+        transform=trans_te
+    )
+    l_te = DataLoader(d_te, batch_size=BS, shuffle=True, drop_last=True)
+
     net = VGG16()
     summary(net, input_size=(1, 3, 32, 32), device="cpu")
     opt = SGD(net.parameters(), LR, SGD_MOM)
@@ -155,14 +146,13 @@ def main():
     max_te_acc = 0
     for i in range(N_EPOCHS):
         net.train()
-        tr_loss, tr_acc = propagate_epoch(net, opt, tr_l, i)
-        sched.step()
+        tr_loss, tr_acc = propagate_epoch(net, opt, l_tr, i)
         net.eval()
         with torch.no_grad():
-            te_loss, te_acc = propagate_epoch(net, opt, te_l, i)
+            te_loss, te_acc = propagate_epoch(net, opt, l_te, i)
         max_te_acc = max(max_te_acc, te_acc)
         fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, best acc %5.3f"
         print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
-
+        sched.step()
 
 main()
