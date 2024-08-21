@@ -65,21 +65,22 @@ FEATURE_LAYERS = [
     512, 512, 512, "M",
 ]
 
-
+# Gets 93.6% acc with normal top.
 class VGG16(Module):
     def __init__(self):
         super(VGG16, self).__init__()
         layers = list(make_layers(FEATURE_LAYERS))
         self.features = Sequential(*layers)
-        self.classifier = Sequential(
-            Linear(512, 4096),
-            ReLU(),
-            Dropout(0.5),
-            Linear(4096, 4096),
-            ReLU(),
-            Dropout(0.5),
-            Linear(4096, N_CLS),
-        )
+        self.classifier = Linear(512, N_CLS)
+        # self.classifier = Sequential(
+        #     Linear(512, 4096),
+        #     ReLU(),
+        #     Dropout(0.5),
+        #     Linear(4096, 4096),
+        #     ReLU(),
+        #     Dropout(0.5),
+        #     Linear(4096, N_CLS),
+        # )
         for m in self.modules():
             if isinstance(m, Conv2d):
                 kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
@@ -128,15 +129,9 @@ def main():
         norm
     ])
     trans_te = Compose([ToTensor(), norm])
-    d_tr = CIFAR10(DATA_DIR, True,
-        download=True,
-        transform=trans_tr
-    )
+    d_tr = CIFAR10(DATA_DIR, True, trans_tr, download = True)
+    d_te = CIFAR10(DATA_DIR, False, trans_te, download = True)
     l_tr = DataLoader(d_tr, batch_size=BS, shuffle=False, drop_last=True)
-    d_te = CIFAR10(DATA_DIR, False,
-        download=False,
-        transform=trans_te
-    )
     l_te = DataLoader(d_te, batch_size=BS, shuffle=True, drop_last=True)
 
     net = VGG16()
