@@ -41,7 +41,6 @@ N_EPOCHS = 500
 T_MAX = 50
 SGD_MOM = 0.9
 
-
 # Build feature extraction layers based on spec
 def make_vgg_layers(spec):
     n_chans_in = 3
