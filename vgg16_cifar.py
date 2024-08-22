@@ -65,22 +65,22 @@ FEATURE_LAYERS = [
     512, 512, 512, "M",
 ]
 
-# Gets 93.6% acc with normal top.
+# The accuracy of the mode lis 93.6% with a normal top, but only 92.1%
+# with a Linear(512, N_CLS) top.
 class VGG16(Module):
     def __init__(self):
         super(VGG16, self).__init__()
         layers = list(make_layers(FEATURE_LAYERS))
         self.features = Sequential(*layers)
-        self.classifier = Linear(512, N_CLS)
-        # self.classifier = Sequential(
-        #     Linear(512, 4096),
-        #     ReLU(),
-        #     Dropout(0.5),
-        #     Linear(4096, 4096),
-        #     ReLU(),
-        #     Dropout(0.5),
-        #     Linear(4096, N_CLS),
-        # )
+        self.classifier = Sequential(
+            Linear(512, 4096),
+            ReLU(),
+            Dropout(0.5),
+            Linear(4096, 4096),
+            ReLU(),
+            Dropout(0.5),
+            Linear(4096, N_CLS),
+        )
         for m in self.modules():
             if isinstance(m, Conv2d):
                 kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
