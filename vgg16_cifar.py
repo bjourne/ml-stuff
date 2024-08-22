@@ -47,8 +47,8 @@ def make_layers(spec):
     for v in spec:
         if type(v) == int:
             # Batch norm so no bias.
-            yield Conv2d(n_chans_in, v, 3, padding=1, bias=False)
-            yield BatchNorm2d(v)
+            yield Conv2d(n_chans_in, v, 3, padding=1, bias=True)
+            #yield BatchNorm2d(v)
             yield ReLU(True)
             n_chans_in = v
         elif v == "M":
@@ -65,7 +65,7 @@ FEATURE_LAYERS = [
     512, 512, 512, "M",
 ]
 
-# The accuracy of the mode lis 93.6% with a normal top, but only 92.1%
+# The accuracy of the model is 93.6% with a normal top, but only 92.1%
 # with a Linear(512, N_CLS) top.
 class VGG16(Module):
     def __init__(self):
@@ -84,6 +84,8 @@ class VGG16(Module):
         for m in self.modules():
             if isinstance(m, Conv2d):
                 kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    constant_(m.bias, 0)
             elif isinstance(m, BatchNorm2d):
                 constant_(m.weight, 1)
                 constant_(m.bias, 0)
