@@ -47,8 +47,8 @@ def make_layers(spec):
     for v in spec:
         if type(v) == int:
             # Batch norm so no bias.
-            yield Conv2d(n_chans_in, v, 3, padding=1, bias=True)
-            #yield BatchNorm2d(v)
+            yield Conv2d(n_chans_in, v, 3, padding=1, bias=False)
+            yield BatchNorm2d(v)
             yield ReLU(True)
             n_chans_in = v
         elif v == "M":
@@ -65,8 +65,13 @@ FEATURE_LAYERS = [
     512, 512, 512, "M",
 ]
 
-# The accuracy of the model is 93.6% with a normal top, but only 92.1%
-# with a Linear(512, N_CLS) top.
+# Performance of some variants:
+#
+# |VERSION               |ACC |
+# +----------------------+----+
+# |Standard              |93.6|
+# |Linear(512, N_CLS) top|92.1|
+# |No BatchNorm2d        |92.6|
 class VGG16(Module):
     def __init__(self):
         super(VGG16, self).__init__()
