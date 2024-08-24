@@ -101,9 +101,12 @@ class OnlineLIFNode(Module):
             spike_d = spike.clone().detach()
             self.rate = self.rate * LEAK_LAMBDA + spike_d
 
+        ret = spike
         if self.training:
-            return torch.cat((spike, self.rate))
-        return spike
+            ret = torch.cat((spike, self.rate))
+        # Scaled weight standardization (see Section 4.4 and
+        # Appendix C.1).
+        return ret * 2.74
 
 class Replace(Function):
     @staticmethod
@@ -139,9 +142,6 @@ class SequentialModule(Sequential):
         for mod in self._modules.values():
             if isinstance(mod, OnlineLIFNode):
                 x = mod(x, init)
-                # Scaled weight standardization (see Section 4.4 and
-                # Appendix C.1).
-                x = x * 2.74
             else:
                 x = mod(x)
         return x
@@ -167,10 +167,29 @@ class ScaledWSConv2d(Conv2d):
             self.groups
         )
 
+def build_layers():
+    n_chan_in = 3
+    first_conv = True
+
+    # Only VGG-16
+    cfg = [64, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512]
+    for v in cfg:
+        if v == 'M':
+            # Why avg and not max?
+            yield AvgPool2d(2)
+        elif type(v) == int:
+            conv2d = ScaledWSConv2d(n_chan_in, v)
+            if not first_conv:
+                conv2d = WrappedSNNOp(conv2d)
+            first_conv = False
+            yield conv2d
+            yield OnlineLIFNode()
+            n_chan_in = v
+
 class OnlineSpikingVGG(Module):
     def __init__(self):
         super(OnlineSpikingVGG, self).__init__()
-        self.features = self.make_layers()
+        self.features = SequentialModule(*list(build_layers()))
         self.classifier = WrappedSNNOp(Linear(512, N_CLS))
         for m in self.modules():
             if isinstance(m, Conv2d):
@@ -189,27 +208,6 @@ class OnlineSpikingVGG(Module):
         x = self.features(x, init)
         x = torch.mean(x, dim = (2, 3))
         return self.classifier(x)
-
-    @staticmethod
-    def make_layers():
-        layers = []
-        n_chan_in = 3
-        first_conv = True
-
-        # Only one VGG arch
-        cfg = [64, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512]
-        for v in cfg:
-            if v == 'M':
-                # Why avg and not max?
-                layers += [AvgPool2d(2)]
-            elif type(v) == int:
-                conv2d = ScaledWSConv2d(n_chan_in, v)
-                if not first_conv:
-                    conv2d = WrappedSNNOp(conv2d)
-                first_conv = False
-                layers += [conv2d, OnlineLIFNode()]
-                n_chan_in = v
-        return SequentialModule(*layers)
 
 def compute_loss(yh, y):
     y_one_hot = one_hot(y, N_CLS).float()
