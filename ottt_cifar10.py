@@ -17,14 +17,14 @@ from torch.nn import (
     Linear,
     Module,
     Parameter,
-    Sequential,
-    init
+    Sequential
 )
 from torch.nn.functional import (
     conv2d,
     cross_entropy,
     mse_loss, one_hot
 )
+from torch.nn.init import constant_, kaiming_normal_, normal_
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
@@ -68,7 +68,7 @@ SGD_MOM = 0.9
 T_MAX = 300
 LOSS_LAMBDA = 0.05
 
-class sigmoid(Function):
+class Sigmoid(Function):
     @staticmethod
     def forward(ctx, x):
         ctx.save_for_backward(x)
@@ -91,7 +91,7 @@ class OnlineLIFNode(Module):
         self.v = self.v.detach() * LEAK_LAMBDA + x
 
         # Check spiking
-        spike = sigmoid.apply(self.v - V_THRESH)
+        spike = Sigmoid.apply(self.v - V_THRESH)
 
         # Maybe soft reset
         spike_d = spike.detach()
@@ -193,16 +193,16 @@ class OnlineSpikingVGG(Module):
         self.classifier = WrappedSNNOp(Linear(512, N_CLS))
         for m in self.modules():
             if isinstance(m, Conv2d):
-                init.kaiming_normal_(
+                kaiming_normal_(
                     m.weight,
                     mode='fan_out',
                     nonlinearity='relu'
                 )
                 if m.bias is not None:
-                    init.constant_(m.bias, 0)
+                    constant_(m.bias, 0)
             elif isinstance(m, Linear):
-                init.normal_(m.weight, 0, 0.01)
-                init.constant_(m.bias, 0)
+                normal_(m.weight, 0, 0.01)
+                constant_(m.bias, 0)
 
     def forward(self, x, init):
         x = self.features(x, init)
@@ -289,6 +289,7 @@ def main():
     rprint(tab)
 
     net = OnlineSpikingVGG()
+
     print('Total Parameters: %.2fM'
           % (sum(p.numel() for p in net.parameters()) / 1000000.0))
 
