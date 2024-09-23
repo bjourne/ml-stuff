@@ -2,7 +2,7 @@
 #
 # VGG16 from scratch and trained on CIFAR10.
 from itertools import islice
-from mlstuff import VGG16, load_cifar10
+from mlstuff import VGG16, load_cifar
 from pathlib import Path
 from torch.nn.functional import cross_entropy, mse_loss, one_hot
 from torch.optim import SGD
@@ -11,10 +11,10 @@ from torchinfo import summary
 
 import torch
 
-N_CLS = 10
+N_CLS = 100
 BS = 256
 DATA_DIR = Path("/tmp/data")
-LR = 0.01
+LR = 0.1
 N_EPOCHS = 500
 T_MAX = 50
 SGD_MOM = 0.9
@@ -42,8 +42,7 @@ def propagate_epoch(net, opt, loader, epoch):
     return tot_loss / n, tot_acc / n
 
 def main():
-    l_tr, l_te = load_cifar10(DATA_DIR, BS)
-
+    l_tr, l_te = load_cifar(DATA_DIR, BS, N_CLS)
     net = VGG16(N_CLS)
     summary(net, input_size=(1, 3, 32, 32), device="cpu")
     opt = SGD(net.parameters(), LR, SGD_MOM)

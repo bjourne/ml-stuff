@@ -14,7 +14,7 @@ from torch.nn import (
 from torch.nn.init import constant_, kaiming_normal_, normal_
 from torch.utils.data import DataLoader
 from torchtoolbox.transform import Cutout
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR10, CIFAR100
 from torchvision.transforms import (
     Compose,
     Normalize,
@@ -23,7 +23,7 @@ from torchvision.transforms import (
     ToTensor,
 )
 
-def load_cifar10(data_dir, batch_size):
+def load_cifar(data_dir, batch_size, n_cls):
     norm = Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     trans_tr = Compose([
         RandomCrop(32, padding = 4),
@@ -33,8 +33,9 @@ def load_cifar10(data_dir, batch_size):
         norm
     ])
     trans_te = Compose([ToTensor(), norm])
-    d_tr = CIFAR10(data_dir, True, trans_tr, download = True)
-    d_te = CIFAR10(data_dir, False, trans_te, download = True)
+    cls = CIFAR10 if n_cls == 10 else CIFAR100
+    d_tr = cls(data_dir, True, trans_tr, download = True)
+    d_te = cls(data_dir, False, trans_te, download = True)
     l_tr = DataLoader(d_tr, batch_size, False, drop_last = True)
     l_te = DataLoader(d_te, batch_size, True, drop_last = True)
     return l_tr, l_te
@@ -63,11 +64,12 @@ def make_layers():
 
 # Performance of some variants:
 #
-# |VERSION               |DATASET|ACC |
-# +----------------------+-------+----+
-# |Standard              |CIFAR10|93.6|
-# |Linear(512, N_CLS)    |CIFAR10|92.1|
-# |No BatchNorm2d        |CIFAR10|92.6|
+# |VERSION               |DATASET |ACC |
+# +----------------------+--------+----+
+# |Standard              |CIFAR10 |93.6|
+# |Linear(512, N_CLS)    |CIFAR10 |92.1|
+# |No BatchNorm2d        |CIFAR10 |92.6|
+# |Standard              |CIFAR100|43.3|
 class VGG16(Module):
     def __init__(self, n_cls):
         super(VGG16, self).__init__()
