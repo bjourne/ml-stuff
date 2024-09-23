@@ -83,7 +83,7 @@ def build_dense_layers(n_chans, n_block):
 #
 # |VERSION               |ACC |
 # +----------------------+----+
-# |Standard              |94.3|
+# |Standard              |94.4|
 class DenseNet(Module):
     def __init__(self):
         super(DenseNet, self).__init__()
