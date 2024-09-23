@@ -17,9 +17,9 @@ BS = 512
 DATA_PATH = Path('/tmp/data')
 NET_PATH = DATA_PATH / 'net.pth'
 N_EPOCHS = 3
-N_TIME_STEPS = 32
+N_TIME_STEPS = 16
 LOG_INT = 100
-V_THR = 64
+V_THR = 2
 N_CLS = 10
 
 ANN = Sequential(
@@ -45,8 +45,10 @@ def snn(x, w1, b1, w2, b2, w3, b3):
     n1 = torch.zeros((BS, 64))
     n2 = torch.zeros((BS, 64))
     y2 = torch.zeros((BS, N_CLS))
-    for _ in range(N_TIME_STEPS):
-        xp = (torch.rand(x.size()) < x).float()
+    for i in range(N_TIME_STEPS):
+        pct = i / (N_TIME_STEPS - 1)
+        xp = (pct < x).float()
+
         xp = torch.reshape(xp, (xp.size(0), -1))
         xp = linear(xp, w1, b1)
         n1, xp = if_forward(n1, xp)
@@ -64,7 +66,8 @@ def propagate_epoch(net, opt, loader, epoch):
     print("== %s %3d/%3d ==" % args)
     tot_loss = 0
     tot_acc = 0
-    for i, (x, y) in enumerate(loader, n):
+    n = len(loader)
+    for i, (x, y) in enumerate(loader):
         if net.training:
             opt.zero_grad()
         yh = net(x)
@@ -92,15 +95,15 @@ def train():
 
     max_te_acc = 0
     for i in range(N_EPOCHS):
-        net.train()
+        ANN.train()
         tr_loss, tr_acc = propagate_epoch(ANN, opt, ls[0], i)
-        net.eval()
+        ANN.eval()
         with torch.no_grad():
             te_loss, te_acc = propagate_epoch(ANN, opt, ls[1], i)
         max_te_acc = max(max_te_acc, te_acc)
         fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, best acc %5.3f"
         print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
-    torch.save(net.state_dict(), NET_PATH)
+    torch.save(ANN.state_dict(), NET_PATH)
 
 def test():
     ls = get_loaders()
