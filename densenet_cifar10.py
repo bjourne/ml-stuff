@@ -55,9 +55,9 @@ class Bottleneck(Module):
     def __init__(self, n_chan_in):
         super(Bottleneck, self).__init__()
         self.bn1 = BatchNorm2d(n_chan_in)
-        self.conv1 = Conv2d(n_chan_in, 4*GROWTH_RATE, 1, bias=False)
-        self.bn2 = BatchNorm2d(4*GROWTH_RATE)
-        self.conv2 = Conv2d(4*GROWTH_RATE, GROWTH_RATE, 3, padding=1, bias=False)
+        self.conv1 = Conv2d(n_chan_in, 4 * GROWTH_RATE, 1, bias=False)
+        self.bn2 = BatchNorm2d(4 * GROWTH_RATE)
+        self.conv2 = Conv2d(4 * GROWTH_RATE, GROWTH_RATE, 3, padding=1, bias=False)
 
     def forward(self, x):
         xp = self.conv1(relu(self.bn1(x)))

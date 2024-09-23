@@ -2,106 +2,22 @@
 #
 # VGG16 from scratch and trained on CIFAR10.
 from itertools import islice
+from mlstuff import VGG16, load_cifar10
 from pathlib import Path
 from torch.nn.functional import cross_entropy, mse_loss, one_hot
-from torch.nn import (
-    AvgPool2d,
-    BatchNorm2d,
-    Conv2d,
-    Dropout,
-    Linear,
-    MaxPool2d,
-    Module,
-    Parameter,
-    ReLU,
-    Sequential,
-)
-from torch.nn.init import constant_, kaiming_normal_, normal_
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import DataLoader
 from torchinfo import summary
-from torchtoolbox.transform import Cutout
-from torchvision.datasets import CIFAR10
-from torchvision.transforms import (
-    Compose,
-    Normalize,
-    RandomCrop,
-    RandomHorizontalFlip,
-    ToTensor,
-)
 
 import torch
 
 N_CLS = 10
-BS = 128
+BS = 256
 DATA_DIR = Path("/tmp/data")
 LR = 0.01
 N_EPOCHS = 500
 T_MAX = 50
 SGD_MOM = 0.9
-
-# Build feature extraction layers based on spec
-def make_layers(spec):
-    n_chans_in = 3
-    for v in spec:
-        if type(v) == int:
-            # Batch norm so no bias.
-            yield Conv2d(n_chans_in, v, 3, padding=1, bias=False)
-            yield BatchNorm2d(v)
-            yield ReLU(True)
-            n_chans_in = v
-        elif v == "M":
-            yield MaxPool2d(2)
-        else:
-            assert False
-
-
-FEATURE_LAYERS = [
-    64, 64, "M",
-    128, 128, "M",
-    256, 256, 256, "M",
-    512, 512, 512, "M",
-    512, 512, 512, "M",
-]
-
-# Performance of some variants:
-#
-# |VERSION               |ACC |
-# +----------------------+----+
-# |Standard              |93.6|
-# |Linear(512, N_CLS) top|92.1|
-# |No BatchNorm2d        |92.6|
-class VGG16(Module):
-    def __init__(self):
-        super(VGG16, self).__init__()
-        layers = list(make_layers(FEATURE_LAYERS))
-        self.features = Sequential(*layers)
-        self.classifier = Sequential(
-            Linear(512, 4096),
-            ReLU(),
-            Dropout(0.5),
-            Linear(4096, 4096),
-            ReLU(),
-            Dropout(0.5),
-            Linear(4096, N_CLS),
-        )
-        for m in self.modules():
-            if isinstance(m, Conv2d):
-                kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-                if m.bias is not None:
-                    constant_(m.bias, 0)
-            elif isinstance(m, BatchNorm2d):
-                constant_(m.weight, 1)
-                constant_(m.bias, 0)
-            elif isinstance(m, Linear):
-                normal_(m.weight, 0, 0.01)
-                constant_(m.bias, 0)
-
-    def forward(self, x):
-        x = self.features(x)
-        x = x.view(x.size(0), -1)
-        return self.classifier(x)
 
 def propagate_epoch(net, opt, loader, epoch):
     phase = "train" if net.training else "test"
@@ -125,23 +41,10 @@ def propagate_epoch(net, opt, loader, epoch):
         tot_acc += acc
     return tot_loss / n, tot_acc / n
 
-
 def main():
-    norm = Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-    trans_tr = Compose([
-        RandomCrop(32, padding=4),
-        Cutout(),
-        RandomHorizontalFlip(),
-        ToTensor(),
-        norm
-    ])
-    trans_te = Compose([ToTensor(), norm])
-    d_tr = CIFAR10(DATA_DIR, True, trans_tr, download = True)
-    d_te = CIFAR10(DATA_DIR, False, trans_te, download = True)
-    l_tr = DataLoader(d_tr, batch_size=BS, shuffle=False, drop_last=True)
-    l_te = DataLoader(d_te, batch_size=BS, shuffle=True, drop_last=True)
+    l_tr, l_te = load_cifar10(DATA_DIR, BS)
 
-    net = VGG16()
+    net = VGG16(N_CLS)
     summary(net, input_size=(1, 3, 32, 32), device="cpu")
     opt = SGD(net.parameters(), LR, SGD_MOM)
     sched = CosineAnnealingLR(opt, T_max=T_MAX)
