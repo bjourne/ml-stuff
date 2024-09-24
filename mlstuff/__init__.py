@@ -1,4 +1,5 @@
 # Copyright (C) 2024 Björn A. Lindqvist
+from pickle import load
 from torch.nn import (
     AvgPool2d,
     BatchNorm2d,
@@ -33,12 +34,22 @@ def load_cifar(data_dir, batch_size, n_cls):
         norm
     ])
     trans_te = Compose([ToTensor(), norm])
-    cls = CIFAR10 if n_cls == 10 else CIFAR100
+    if n_cls == 10:
+        cls = CIFAR10
+        names = []
+    else:
+        cls = CIFAR100
+        meta = data_dir / 'cifar-100-python' / 'meta'
+        with open(meta, 'rb') as f:
+            d = load(f)
+            names = d['fine_label_names']
+
+
     d_tr = cls(data_dir, True, trans_tr, download = True)
     d_te = cls(data_dir, False, trans_te, download = True)
-    l_tr = DataLoader(d_tr, batch_size, False, drop_last = True)
+    l_tr = DataLoader(d_tr, batch_size, True, drop_last = True)
     l_te = DataLoader(d_te, batch_size, True, drop_last = True)
-    return l_tr, l_te
+    return l_tr, l_te, names
 
 # Build feature extraction layers based on spec
 def make_layers():
