@@ -79,11 +79,6 @@ def build_dense_layers(n_chans, n_block):
         n_chans += GROWTH_RATE
     return Sequential(*layers)
 
-# Performance of some variants:
-#
-# |VERSION               |ACC |
-# +----------------------+----+
-# |Standard              |94.4|
 class DenseNet(Module):
     def __init__(self):
         super(DenseNet, self).__init__()

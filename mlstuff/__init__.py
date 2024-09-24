@@ -62,14 +62,6 @@ def make_layers():
         else:
             assert False
 
-# Performance of some variants:
-#
-# |VERSION               |DATASET |ACC |
-# +----------------------+--------+----+
-# |Standard              |CIFAR10 |93.6|
-# |Linear(512, N_CLS)    |CIFAR10 |92.1|
-# |No BatchNorm2d        |CIFAR10 |92.6|
-# |Standard              |CIFAR100|43.3|
 class VGG16(Module):
     def __init__(self, n_cls):
         super(VGG16, self).__init__()
