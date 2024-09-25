@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 
 N_CLS = 100
-BS = 64
+BS = 256
 DATA_DIR = Path("/tmp/data")
 LR = 0.1
 N_EPOCHS = 500
@@ -20,7 +20,8 @@ SGD_MOM = 0.9
 PRINT_INTERVAL = 10
 
 def main():
-    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dev = 'cpu'
+    #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     writer = SummaryWriter(DATA_DIR / 'runs')
 
     net = VGG16(N_CLS)
@@ -41,7 +42,7 @@ def main():
                 net, opt, l_te, i, N_EPOCHS, PRINT_INTERVAL
             )
         max_te_acc = max(max_te_acc, te_acc)
-        fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, max acc %5.3f"
+        fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, (best %5.3f)"
         print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
 
         writer.add_scalars('acc', {'train' : tr_acc, 'test' : te_acc}, i)

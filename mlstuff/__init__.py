@@ -1,6 +1,7 @@
 # Copyright (C) 2024 Björn A. Lindqvist
 from itertools import islice
 from matplotlib import pyplot
+from mlstuff.augment import CIFARPolicy, Cutout2
 from pickle import load
 from torch.nn.functional import cross_entropy, mse_loss, one_hot
 from torch.nn import (
@@ -32,6 +33,40 @@ import numpy as np
 ########################################################################
 # Data processing
 ########################################################################
+def transforms_aa():
+    # These values should be good for CIFAR100
+    norm = Normalize(
+        [n/255. for n in [129.3, 124.1, 112.4]],
+        [n/255. for n in [68.2,  65.4,  70.4]]
+    )
+    tr  = Compose([
+        RandomCrop(32, padding=4),
+        RandomHorizontalFlip(),
+        CIFARPolicy(),
+        ToTensor(),
+        norm,
+        Cutout2(n_holes=1, length=16)
+    ])
+    te = Compose([
+        ToTensor(),
+        norm
+    ])
+    return tr, te
+
+def transforms_std():
+    norm = Normalize(
+        (0.4914, 0.4822, 0.4465),
+        (0.2023, 0.1994, 0.2010)
+    )
+    tr = Compose([
+        RandomCrop(32, padding = 4),
+        Cutout(),
+        RandomHorizontalFlip(),
+        ToTensor(),
+        norm
+    ])
+    te = Compose([ToTensor(), norm])
+    return tr, te
 
 # Tie the device to the DataLoader
 class DevDataLoader(DataLoader):
@@ -44,18 +79,10 @@ class DevDataLoader(DataLoader):
             yield x.to(self.dev), y.to(self.dev)
 
 def load_cifar(data_dir, batch_size, n_cls, dev):
-    norm = Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-    trans_tr = Compose([
-        RandomCrop(32, padding = 4),
-        Cutout(),
-        RandomHorizontalFlip(),
-        ToTensor(),
-        norm
-    ])
-    trans_te = Compose([ToTensor(), norm])
+    t_tr, t_te = transforms_aa()
     cls = CIFAR10 if n_cls == 10 else CIFAR100
-    d_tr = cls(data_dir, True, trans_tr, download = True)
-    d_te = cls(data_dir, False, trans_te, download = True)
+    d_tr = cls(data_dir, True, t_tr, download = True)
+    d_te = cls(data_dir, False, t_te, download = True)
     l_tr = DevDataLoader(dev, d_tr, batch_size, True, drop_last = True)
     l_te = DevDataLoader(dev, d_te, batch_size, True, drop_last = True)
     if n_cls == 10:
@@ -67,6 +94,10 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
             names = d['fine_label_names']
 
     return l_tr, l_te, names
+
+########################################################################
+# Models
+########################################################################
 
 # Build feature extraction layers based on spec
 def make_layers():
@@ -90,9 +121,6 @@ def make_layers():
         else:
             assert False
 
-########################################################################
-# Models
-########################################################################
 class VGG16(Module):
     def __init__(self, n_cls):
         super(VGG16, self).__init__()
