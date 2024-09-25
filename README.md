@@ -11,5 +11,5 @@ Reimplementations of deep learning models.
 | CIFAR10  | VGG16    | no-BN         | ?   | 92.6 |
 | CIFAR10  | DenseNet | std           | 128 | 94.4 |
 | CIFAR100 | VGG16    | std           | 256 | 70.7 |
-| CIFAR100 | VGG16    | std           | 64  | 64.2 |
+| CIFAR100 | VGG16    | std           | 64  | 71.7 |
 |          |          |               |     |      |

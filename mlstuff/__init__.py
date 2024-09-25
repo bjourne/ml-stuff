@@ -1,5 +1,6 @@
 # Copyright (C) 2024 Björn A. Lindqvist
 from itertools import islice
+from matplotlib import pyplot
 from pickle import load
 from torch.nn.functional import cross_entropy, mse_loss, one_hot
 from torch.nn import (
@@ -25,6 +26,8 @@ from torchvision.transforms import (
     RandomHorizontalFlip,
     ToTensor,
 )
+
+import numpy as np
 
 ########################################################################
 # Data processing
@@ -148,3 +151,24 @@ def propagate_epoch(net, opt, loader, epoch, n_epochs, print_interval):
     tot_loss /= n
     tot_acc /= n
     return tot_loss, tot_acc
+
+########################################################################
+# Training
+########################################################################
+def loader_sample_figure(loader, names, net):
+    x, y = next(iter(loader))
+    yh = net(x)
+    correct = (yh.argmax(1) == y)
+    x = ((x - x.min()) / (x.max() - x.min()))
+    fig = pyplot.figure(figsize=(12, 12))
+    s = 4
+    for i in range(s*s):
+        ax = fig.add_subplot(s, s, i + 1, xticks = [], yticks = [])
+        pyplot.imshow(np.transpose(x[i].cpu(), (1, 2, 0)))
+        color = 'green' if correct[i] else 'red'
+        ax.set_title(
+            names[y[i]],
+            fontdict=dict(color=color)
+        )
+    pyplot.close(fig)
+    return fig

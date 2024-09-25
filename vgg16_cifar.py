@@ -1,15 +1,13 @@
 # Copyright (C) 2024 Björn A. Lindqvist
 #
 # VGG16 from scratch and trained on CIFAR10.
-from matplotlib import pyplot
-from mlstuff import VGG16, load_cifar, propagate_epoch
+from mlstuff import VGG16, load_cifar, loader_sample_figure, propagate_epoch
 from pathlib import Path
 from torch import no_grad
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
 
-import numpy as np
 import torch
 
 N_CLS = 100
@@ -20,24 +18,6 @@ N_EPOCHS = 500
 T_MAX = 50
 SGD_MOM = 0.9
 PRINT_INTERVAL = 10
-
-def loader_sample_figure(loader, names, net):
-    x, y = next(iter(loader))
-    yh = net(x)
-    correct = (yh.argmax(1) == y)
-    x = ((x - x.min()) / (x.max() - x.min()))
-    fig = pyplot.figure(figsize=(12, 12))
-    s = 4
-    for i in range(s*s):
-        ax = fig.add_subplot(s, s, i + 1, xticks = [], yticks = [])
-        pyplot.imshow(np.transpose(x[i], (1, 2, 0)))
-        color = 'green' if correct[i] else 'red'
-        ax.set_title(
-            names[y[i]],
-            fontdict=dict(color=color)
-        )
-    pyplot.close(fig)
-    return fig
 
 def main():
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
