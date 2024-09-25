@@ -4,18 +4,7 @@ from matplotlib import pyplot
 from mlstuff.augment import CIFARPolicy, Cutout2
 from pickle import load
 from torch.nn.functional import cross_entropy, mse_loss, one_hot
-from torch.nn import (
-    AvgPool2d,
-    BatchNorm2d,
-    Conv2d,
-    Dropout,
-    Linear,
-    MaxPool2d,
-    Module,
-    Parameter,
-    ReLU,
-    Sequential,
-)
+from torch.nn import *
 from torch.nn.init import constant_, kaiming_normal_, normal_
 from torch.utils.data import DataLoader
 from torchtoolbox.transform import Cutout
@@ -99,8 +88,108 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
 # Models
 ########################################################################
 
+# Expansion is hardcoded to 4
+class ResNetBlock(Module):
+    def __init__(self, n_chans_in, n_chans_out, downsample, stride):
+        super(ResNetBlock, self).__init__()
+        self.conv1 = Conv2d(
+            n_chans_in, n_chans_out,
+            1, 1, 0, bias = False
+        )
+        self.bn1 = BatchNorm2d(n_chans_out)
+        self.conv2 = Conv2d(
+            n_chans_out, n_chans_out,
+            3, stride, 1, bias = False
+        )
+        self.bn2 = BatchNorm2d(n_chans_out)
+        self.conv3 = Conv2d(
+            n_chans_out, 4 * n_chans_out,
+            1, 1, 0, bias = False
+        )
+        self.bn3 = BatchNorm2d(4 * n_chans_out)
+        self.relu = ReLU(inplace = True)
+        self.downsample = downsample
+
+    def forward(self, x):
+        id = x
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+
+        x = self.conv3(x)
+        x = self.bn3(x)
+
+        if self.downsample is not None:
+            id = self.downsample(id)
+
+        x = x + id
+        x = self.relu(x)
+        return x
+
+class ResNet(Module):
+    def __init__(self, layers, n_cls):
+        super(ResNet, self).__init__()
+        self.n_chans_in = 64
+        self.conv1 = Conv2d(3, 64, 7, 2, 3, bias = False)
+        self.bn1 = BatchNorm2d(64)
+        self.relu = ReLU(inplace = True)
+        self.mp = MaxPool2d(3, 2, 1)
+
+        # ResNet layers
+        self.layer1 = self.make_layer(layers[0], 64, 1)
+        self.layer2 = self.make_layer(layers[1], 128, 2)
+        self.layer3 = self.make_layer(layers[2], 256, 2)
+        self.layer4 = self.make_layer(layers[3], 512, 2)
+
+        self.ap = AdaptiveAvgPool2d((1, 1))
+        self.fc = Linear(512 * 4, n_cls)
+
+    def make_layer(self, n_res_blocks, n_chans_out, stride):
+        id_downsample = None
+        layers = []
+
+        if stride != 1 or self.n_chans_in != 4 * n_chans_out:
+            id_downsample = Sequential(
+                Conv2d(
+                    self.n_chans_in, 4 * n_chans_out,
+                    1, stride, bias = False
+                ),
+                BatchNorm2d(4 * n_chans_out)
+            )
+
+        # Change number of channels
+        block = ResNetBlock(
+            self.n_chans_in, n_chans_out,
+            id_downsample, stride
+        )
+        layers.append(block)
+        self.n_chans_in = 4 * n_chans_out
+        for i in range(n_res_blocks - 1):
+            layers.append(ResNetBlock(self.n_chans_in, n_chans_out, None, 1))
+
+        return Sequential(*layers)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.mp(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.ap(x)
+        x = x.reshape(x.shape[0], -1)
+        x = self.fc(x)
+        return x
+
 # Build feature extraction layers based on spec
-def make_layers():
+def make_vgg_layers():
     VGG16_LAYERS = [
         64, 64, "M",
         128, 128, "M",
@@ -124,7 +213,7 @@ def make_layers():
 class VGG16(Module):
     def __init__(self, n_cls):
         super(VGG16, self).__init__()
-        layers = list(make_layers())
+        layers = list(make_vgg_layers())
         self.features = Sequential(*layers)
         self.classifier = Sequential(
             Linear(512, 4096),
@@ -200,3 +289,11 @@ def loader_sample_figure(loader, names, net):
         )
     pyplot.close(fig)
     return fig
+
+def main():
+    from torchinfo import summary
+    net = ResNet([3, 4, 6, 3], 100)
+    summary(net, input_size=(1, 3, 32, 32), device="cpu")
+
+if __name__ == '__main__':
+    main()

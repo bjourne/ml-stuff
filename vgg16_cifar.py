@@ -1,7 +1,7 @@
 # Copyright (C) 2024 Björn A. Lindqvist
 #
 # VGG16 from scratch and trained on CIFAR10.
-from mlstuff import VGG16, load_cifar, loader_sample_figure, propagate_epoch
+from mlstuff import ResNet, ResNetBlock, VGG16, load_cifar, loader_sample_figure, propagate_epoch
 from pathlib import Path
 from torch import no_grad
 from torch.optim import SGD
@@ -15,16 +15,17 @@ BS = 256
 DATA_DIR = Path("/tmp/data")
 LR = 0.1
 N_EPOCHS = 500
-T_MAX = 50
+T_MAX = 100
 SGD_MOM = 0.9
 PRINT_INTERVAL = 10
 
 def main():
     dev = 'cpu'
     #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    writer = SummaryWriter(DATA_DIR / 'runs')
+    writer = SummaryWriter(DATA_DIR / 'resnet_runs')
 
-    net = VGG16(N_CLS)
+    net = ResNet([3, 4, 6, 3], N_CLS)
+    #net = VGG16(N_CLS)
     net.to(dev)
     l_tr, l_te, names = load_cifar(DATA_DIR, BS, N_CLS, dev)
     opt = SGD(net.parameters(), LR, SGD_MOM)

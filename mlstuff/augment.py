@@ -2,9 +2,8 @@
 #
 # Inspired by: https://github.com/putshua/ANN_SNN_QCFS/blob/main/Preprocess/augment.py
 from PIL import Image, ImageEnhance, ImageOps
-from random import choice
+from random import choice, random
 
-import random
 import numpy as np
 import torch
 
@@ -62,30 +61,30 @@ class SubPolicy(object):
         funs = {
             "shearX": lambda img, mag: img.transform(
                 img.size, Image.AFFINE, (1, mag *
-                                         random.choice([-1, 1]), 0, 0, 1, 0),
+                                         choice([-1, 1]), 0, 0, 1, 0),
                 Image.BICUBIC, fillcolor=fillcolor),
             "shearY": lambda img, mag: img.transform(
                 img.size, Image.AFFINE, (1, 0, 0, mag *
-                                         random.choice([-1, 1]), 1, 0),
+                                         choice([-1, 1]), 1, 0),
                 Image.BICUBIC, fillcolor=fillcolor),
             "translateX": lambda img, mag: img.transform(
                 img.size, Image.AFFINE, (1, 0, mag *
-                                         img.size[0] * random.choice([-1, 1]), 0, 1, 0),
+                                         img.size[0] * choice([-1, 1]), 0, 1, 0),
                 fillcolor=fillcolor),
             "translateY": lambda img, mag: img.transform(
                 img.size, Image.AFFINE, (1, 0, 0, 0, 1, mag *
-                                         img.size[1] * random.choice([-1, 1])),
+                                         img.size[1] * choice([-1, 1])),
                 fillcolor=fillcolor),
             "rotate": lambda img, mag: img.rotate(mag, fillcolor = fillcolor),
-            "color": lambda img, mag: ImageEnhance.Color(img).enhance(1 + mag * random.choice([-1, 1])),
+            "color": lambda img, mag: ImageEnhance.Color(img).enhance(1 + mag * choice([-1, 1])),
             "posterize": lambda img, mag: ImageOps.posterize(img, mag),
             "solarize": lambda img, mag: ImageOps.solarize(img, mag),
             "contrast": lambda img, mag: ImageEnhance.Contrast(img).enhance(
-                1 + mag * random.choice([-1, 1])),
+                1 + mag * choice([-1, 1])),
             "sharpness": lambda img, mag: ImageEnhance.Sharpness(img).enhance(
-                1 + mag * random.choice([-1, 1])),
+                1 + mag * choice([-1, 1])),
             "brightness": lambda img, mag: ImageEnhance.Brightness(img).enhance(
-                1 + mag * random.choice([-1, 1])),
+                1 + mag * choice([-1, 1])),
             "autocontrast": lambda img, mag: ImageOps.autocontrast(img),
             "equalize": lambda img, mag: ImageOps.equalize(img),
             "invert": lambda img, mag: ImageOps.invert(img)
@@ -97,9 +96,9 @@ class SubPolicy(object):
         self.fun2 = lambda img: funs[op2](img, mag2)
 
     def __call__(self, img):
-        if random.random() < self.p1:
+        if random() < self.p1:
             img = self.fun1(img)
-        if random.random() < self.p2:
+        if random() < self.p2:
             img = self.fun2(img)
         return img
 
