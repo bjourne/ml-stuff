@@ -14,14 +14,14 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 N_CLS = 100
-BS = 256
+BS = 64
 DATA_DIR = Path("/tmp/data")
 LR = 0.1
 N_EPOCHS = 500
 T_MAX = 50
 SGD_MOM = 0.9
 
-def propagate_epoch(net, opt, loader, epoch):
+def propagate_epoch(net, opt, loader, epoch, dev):
     phase = "train" if net.training else "test"
     args = phase, epoch, N_EPOCHS
     print("== %s %3d/%3d ==" % args)
@@ -29,6 +29,8 @@ def propagate_epoch(net, opt, loader, epoch):
     tot_acc = 0
     n = len(loader)
     for i, (x, y) in enumerate(islice(loader, n)):
+        x.to(dev)
+        y.to(dev)
         if net.training:
             opt.zero_grad()
         yh = net(x)
@@ -45,8 +47,10 @@ def propagate_epoch(net, opt, loader, epoch):
     tot_acc /= n
     return tot_loss, tot_acc
 
-def loader_sample_figure(loader, names, net):
+def loader_sample_figure(loader, names, net, dev):
     x, y = next(iter(loader))
+    x = x.to(dev)
+    y = y.to(dev)
     yh = net(x)
     correct = (yh.argmax(1) == y)
     x = ((x - x.min()) / (x.max() - x.min()))
@@ -64,9 +68,11 @@ def loader_sample_figure(loader, names, net):
     return fig
 
 def main():
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     writer = SummaryWriter(DATA_DIR / 'runs')
 
     net = VGG16(N_CLS)
+    net.to(dev)
     l_tr, l_te, names = load_cifar(DATA_DIR, BS, N_CLS)
     opt = SGD(net.parameters(), LR, SGD_MOM)
     sched = CosineAnnealingLR(opt, T_max=T_MAX)
@@ -74,10 +80,10 @@ def main():
 
     for i in range(N_EPOCHS):
         net.train()
-        tr_loss, tr_acc = propagate_epoch(net, opt, l_tr, i)
+        tr_loss, tr_acc = propagate_epoch(net, opt, l_tr, i, dev)
         net.eval()
         with no_grad():
-            te_loss, te_acc = propagate_epoch(net, opt, l_te, i)
+            te_loss, te_acc = propagate_epoch(net, opt, l_te, i, dev)
         max_te_acc = max(max_te_acc, te_acc)
         fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, max acc %5.3f"
         print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
@@ -87,7 +93,7 @@ def main():
         writer.add_scalar('lr', sched.get_last_lr()[0], i)
 
         for label, loader in [('training', l_tr), ('testing', l_te)]:
-            fig = loader_sample_figure(loader, names, net)
+            fig = loader_sample_figure(loader, names, net, dev)
             writer.add_figure(label, fig, i)
         writer.flush()
         sched.step()
