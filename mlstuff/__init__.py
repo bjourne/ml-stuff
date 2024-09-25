@@ -1,5 +1,7 @@
 # Copyright (C) 2024 Björn A. Lindqvist
+from itertools import islice
 from pickle import load
+from torch.nn.functional import cross_entropy, mse_loss, one_hot
 from torch.nn import (
     AvgPool2d,
     BatchNorm2d,
@@ -24,7 +26,21 @@ from torchvision.transforms import (
     ToTensor,
 )
 
-def load_cifar(data_dir, batch_size, n_cls):
+########################################################################
+# Data processing
+########################################################################
+
+# Tie the device to the DataLoader
+class DevDataLoader(DataLoader):
+    def __init__(self, dev, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dev = dev
+
+    def __iter__(self):
+        for x, y in super().__iter__():
+            yield x.to(self.dev), y.to(self.dev)
+
+def load_cifar(data_dir, batch_size, n_cls, dev):
     norm = Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
     trans_tr = Compose([
         RandomCrop(32, padding = 4),
@@ -37,9 +53,8 @@ def load_cifar(data_dir, batch_size, n_cls):
     cls = CIFAR10 if n_cls == 10 else CIFAR100
     d_tr = cls(data_dir, True, trans_tr, download = True)
     d_te = cls(data_dir, False, trans_te, download = True)
-    l_tr = DataLoader(d_tr, batch_size, True, drop_last = True)
-    l_te = DataLoader(d_te, batch_size, True, drop_last = True)
-
+    l_tr = DevDataLoader(dev, d_tr, batch_size, True, drop_last = True)
+    l_te = DevDataLoader(dev, d_te, batch_size, True, drop_last = True)
     if n_cls == 10:
         names = []
     else:
@@ -72,6 +87,9 @@ def make_layers():
         else:
             assert False
 
+########################################################################
+# Models
+########################################################################
 class VGG16(Module):
     def __init__(self, n_cls):
         super(VGG16, self).__init__()
@@ -102,3 +120,31 @@ class VGG16(Module):
         x = self.features(x)
         x = x.view(x.size(0), -1)
         return self.classifier(x)
+
+########################################################################
+# Training
+########################################################################
+def propagate_epoch(net, opt, loader, epoch, n_epochs, print_interval):
+    phase = "train" if net.training else "test"
+    args = phase, epoch, n_epochs
+    print("== %s %3d/%3d ==" % args)
+    tot_loss = 0
+    tot_acc = 0
+    n = len(loader)
+    for i, (x, y) in enumerate(islice(loader, n)):
+        if net.training:
+            opt.zero_grad()
+        yh = net(x)
+        loss = cross_entropy(yh, y)
+        if net.training:
+            loss.backward()
+            opt.step()
+        loss = loss.item()
+        acc = (yh.argmax(1) == y).sum().item() / y.size(0)
+        if i % print_interval == 0:
+            print("%4d/%4d, loss/acc: %.4f/%.2f" % (i, n, loss, acc))
+        tot_loss += loss
+        tot_acc += acc
+    tot_loss /= n
+    tot_acc /= n
+    return tot_loss, tot_acc
