@@ -1,6 +1,9 @@
 # Copyright (C) 2024 Björn A. Lindqvist
+from torch.autograd import Function
 from torch.nn import *
 from torch.nn.init import constant_, kaiming_normal_, normal_
+
+import torch
 
 # No expansion factor yet
 class ResNetBasicBlock(Module):
@@ -116,15 +119,18 @@ def make_vgg_layers():
 class VGG16(Module):
     def __init__(self, n_cls):
         super(VGG16, self).__init__()
+        assert n_cls <= 100
         layers = list(make_vgg_layers())
         self.features = Sequential(*layers)
+
+        # Need to determine whether dropout is beneficial here...
         self.classifier = Sequential(
             Flatten(),
             Linear(512, 4096),
-            ReLU(),
+            ReLU(inplace = True),
             Dropout(0.5),
             Linear(4096, 4096),
-            ReLU(),
+            ReLU(inplace = True),
             Dropout(0.5),
             Linear(4096, n_cls),
         )
@@ -144,9 +150,43 @@ class VGG16(Module):
         x = self.features(x)
         return self.classifier(x)
 
+# From https://github.com/putshua/ANN_SNN_QCFS
+class GradFloor(Function):
+    @staticmethod
+    def forward(ctx, x):
+        return x.floor()
+
+    @staticmethod
+    def backward(ctx, x):
+        return x
+
+class QCFS(Module):
+    def __init__(self, theta, L):
+        super(QCFS, self).__init__()
+        self.theta = Parameter(torch.tensor([theta]), requires_grad=True)
+        self.L = L
+
+    def forward(self, x):
+        x = x / self.theta
+        x = torch.clamp(x, 0, 1)
+        x = GradFloor.apply(x * self.L + 0.5) / self.L
+        return x * self.theta
+
+class VGG16QCFS(VGG16):
+    def __init__(self, n_cls, theta, L):
+        super(VGG16QCFS, self).__init__(n_cls)
+
+        for m in self.modules():
+            if isinstance(m, Sequential):
+                for i, m2 in enumerate(m):
+                    if isinstance(m2, ReLU):
+                        m[i] = QCFS(theta, L)
+
 def load_net(net_name, n_cls):
     if net_name == 'vgg16':
         return VGG16(n_cls)
+    elif net_name == 'vgg16qcfs':
+        return VGG16QCFS(n_cls, 8.0, 8)
     elif net_name == 'resnet18':
         return ResNet([2, 2, 2, 2], n_cls)
     elif net_name == 'resnet20':
