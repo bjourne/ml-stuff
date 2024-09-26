@@ -20,9 +20,9 @@ DATA_PATH = Path("/tmp/data")
 LOG_PATH = Path("/tmp/logs")
 LR = 0.1
 N_EPOCHS = 500
-T_MAX = 200
+T_MAX = N_EPOCHS
 SGD_MOM = 0.9
-PRINT_INTERVAL = 1
+PRINT_INTERVAL = 10
 SEED = 1001
 
 def train(net_name):
