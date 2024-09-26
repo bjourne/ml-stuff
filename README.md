@@ -12,6 +12,6 @@ Reimplementations of deep learning models.
 | CIFAR10  | DenseNet | std           | 128 | std | 94.4 |
 | CIFAR100 | VGG16    | std           | 256 | std | 70.7 |
 | CIFAR100 | VGG16    | std           | 64  | std | 71.7 |
-| CIFAR100 | VGG16    | std           | 256 | aa  | 73.5 |
-| CIFAR100 | ResNet50 | std           | 256 | aa  | 45.5 |
-|          |          |               |     |     |      |
+| CIFAR100 | VGG16    | std           | 256 | aa  | 74.1 |
+| CIFAR100 | ResNet50 | std           | 256 | aa  | 46.7 |
+| CIFAR100 | ResNet18 | std           | 256 | aa  | 47.6 |

@@ -2,7 +2,10 @@
 #
 # VGG16 and ResNet50 trained on CIFAR10/100.
 from clize import run
-from mlstuff import load_cifar, load_net, loader_sample_figure, propagate_epoch
+from mlstuff import (
+    load_cifar, load_net, loader_sample_figure,
+    propagate_epoch, seed_all
+)
 from pathlib import Path
 from torch import no_grad
 from torch.optim import SGD
@@ -19,7 +22,8 @@ LR = 0.1
 N_EPOCHS = 500
 T_MAX = 200
 SGD_MOM = 0.9
-PRINT_INTERVAL = 10
+PRINT_INTERVAL = 1
+SEED = 1001
 
 def train(net_name):
     '''Trains a network
@@ -27,6 +31,7 @@ def train(net_name):
     :param net_name: Name of network to train
     '''
     #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    seed_all(SEED)
     dev = 'cpu'
     #print(dev)
     net = load_net(net_name, N_CLS).to(dev)
