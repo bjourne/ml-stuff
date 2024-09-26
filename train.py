@@ -22,7 +22,7 @@ LR = 0.1
 N_EPOCHS = 500
 T_MAX = N_EPOCHS
 SGD_MOM = 0.9
-PRINT_INTERVAL = 10
+PRINT_INTERVAL = 1
 SEED = 1001
 
 def train(net_name):

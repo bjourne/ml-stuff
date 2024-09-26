@@ -106,46 +106,33 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
 
 # No expansion factor yet
 class ResNetBasicBlock(Module):
-    def __init__(self, n_chans_in, n_chans_out, downsample, stride):
+    def __init__(self, n_in, n_out, stride):
         super(ResNetBasicBlock, self).__init__()
-        self.downsample = downsample
-        self.conv1 = Conv2d(
-            n_chans_in, n_chans_out,
-            3, stride, 1, bias = False
-        )
-        self.bn1 = BatchNorm2d(n_chans_out)
+        shortcut = []
+        if stride != 1 or n_in != n_out:
+            shortcut = [
+                Conv2d(n_in, n_out, 1, stride, 0, bias = False),
+                BatchNorm2d(n_out)
+            ]
+        self.shortcut = Sequential(*shortcut)
+        self.conv1 = Conv2d(n_in, n_out, 3, stride, 1, bias = False)
+        self.bn1 = BatchNorm2d(n_out)
         self.relu = ReLU(inplace = True)
-        self.conv2 = Conv2d(
-            n_chans_out, n_chans_out,
-            3, 1, 1, bias = False
-        )
-        self.bn2 = BatchNorm2d(n_chans_out)
+        self.conv2 = Conv2d(n_out, n_out, 3, 1, 1, bias = False)
+        self.bn2 = BatchNorm2d(n_out)
 
-    def forward(self, x):
-        id = x
-        x = self.conv1(x)
+    def forward(self, orig):
+        x = self.conv1(orig)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.conv2(x)
         x = self.bn2(x)
+        return self.relu(x + self.shortcut(orig))
 
-        x = x + self.downsample(id)
-        x = self.relu(x)
-        return x
-
-def make_resnet_layer(n_res_blocks, n_chans_in, n_chans_out, stride):
-    downsample = Sequential()
-    if stride != 1:
-        downsample = Sequential(
-            Conv2d(
-                n_chans_in, n_chans_out,
-                1, stride, bias = False
-            ),
-            BatchNorm2d(n_chans_out)
-        )
-    yield ResNetBasicBlock(n_chans_in, n_chans_out, downsample, stride)
+def make_resnet_layer(n_res_blocks, n_in, n_out, stride):
+    yield ResNetBasicBlock(n_in, n_out, stride)
     for i in range(n_res_blocks - 1):
-        yield ResNetBasicBlock(n_chans_out, n_chans_out, Sequential(), 1)
+        yield ResNetBasicBlock(n_out, n_out, 1)
 
 class ResNet(Module):
     def __init__(self, layers, n_cls):
@@ -182,28 +169,16 @@ class ResNet(Module):
         x = x.view(x.size(0), -1)
         return self.fc(x)
 
-# A smaller ResNet adapted for CIFAR10/100
-def make_resnet4cifar_layer(n_res_blocks, n_chans_in, n_chans_out, stride):
-    downsample = Sequential()
-    if stride != 1 or n_chans_in != n_chans_out:
-        downsample = Sequential(
-            Conv2d(n_chans_in, n_chans_out, 1, stride, 0, bias = False),
-            BatchNorm2d(n_chans_out)
-        )
-    yield ResNetBasicBlock(n_chans_in, n_chans_out, downsample, stride)
-    for i in range(n_res_blocks - 1):
-        yield ResNetBasicBlock(n_chans_out, n_chans_out, Sequential(), 1)
-
+# Small ResNet for CIFAR10/100
 class ResNet4CIFAR(Module):
     def __init__(self, layers, n_cls):
         super(ResNet4CIFAR, self).__init__()
         self.conv1 = Conv2d(3, 16, 3, 1, 1, bias = False)
         self.bn1 = BatchNorm2d(16)
         self.relu = ReLU(inplace = True)
-
-        self.layer1 = Sequential(*make_resnet4cifar_layer(layers[0], 16, 16, 1))
-        self.layer2 = Sequential(*make_resnet4cifar_layer(layers[1], 16, 32, 2))
-        self.layer3 = Sequential(*make_resnet4cifar_layer(layers[2], 32, 64, 2))
+        self.layer1 = Sequential(*make_resnet_layer(layers[0], 16, 16, 1))
+        self.layer2 = Sequential(*make_resnet_layer(layers[1], 16, 32, 2))
+        self.layer3 = Sequential(*make_resnet_layer(layers[2], 32, 64, 2))
         self.ap = AvgPool2d((8, 8))
         self.fc = Linear(64, n_cls)
 
@@ -211,12 +186,10 @@ class ResNet4CIFAR(Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.ap(x)
-
         x = x.view(x.size(0), -1)
         return self.fc(x)
 
