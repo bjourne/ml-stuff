@@ -1,6 +1,7 @@
 # Copyright (C) 2024 Björn A. Lindqvist
 #
 # VGG16 from scratch and trained on CIFAR10.
+from clize import run
 from mlstuff import ResNet, ResNetBlock, VGG16, load_cifar, loader_sample_figure, propagate_epoch
 from pathlib import Path
 from torch import no_grad
@@ -12,22 +13,34 @@ import torch
 
 N_CLS = 100
 BS = 256
-DATA_DIR = Path("/tmp/data")
+DATA_PATH = Path("/tmp/data")
+LOG_PATH = Path("/tmp/logs")
 LR = 0.1
 N_EPOCHS = 500
-T_MAX = 100
+T_MAX = 200
 SGD_MOM = 0.9
 PRINT_INTERVAL = 10
 
-def main():
-    dev = 'cpu'
-    #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    writer = SummaryWriter(DATA_DIR / 'resnet_runs')
+def load_net(net_name):
+    if net_name == 'vgg16':
+        return VGG16(N_CLS)
+    elif net_name == 'resnet50':
+        return ResNet([3, 4, 6, 3], N_CLS)
+    assert False
 
-    net = ResNet([3, 4, 6, 3], N_CLS)
-    #net = VGG16(N_CLS)
-    net.to(dev)
-    l_tr, l_te, names = load_cifar(DATA_DIR, BS, N_CLS, dev)
+def train(net_name):
+    '''Trains a network
+
+    :param net_name: Name of network to train
+    '''
+    #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dev = 'cpu'
+    net = load_net(net_name).to(dev)
+
+    dir = 'runs_%s' % net_name
+    writer = SummaryWriter(LOG_PATH / dir)
+
+    l_tr, l_te, names = load_cifar(DATA_PATH, BS, N_CLS, dev)
     opt = SGD(net.parameters(), LR, SGD_MOM)
     sched = CosineAnnealingLR(opt, T_max=T_MAX)
     max_te_acc = 0
@@ -56,4 +69,5 @@ def main():
         writer.flush()
         sched.step()
 
-main()
+if __name__ == '__main__':
+    run(train)
