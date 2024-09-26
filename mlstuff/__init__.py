@@ -88,40 +88,30 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
 # Models
 ########################################################################
 
-# Expansion is hardcoded to 4
-class ResNetBlock(Module):
+# No expansion factor yet
+class ResNetBasicBlock(Module):
     def __init__(self, n_chans_in, n_chans_out, downsample, stride):
-        super(ResNetBlock, self).__init__()
+        super(ResNetBasicBlock, self).__init__()
+        self.downsample = downsample
         self.conv1 = Conv2d(
             n_chans_in, n_chans_out,
-            1, 1, 0, bias = False
-        )
-        self.bn1 = BatchNorm2d(n_chans_out)
-        self.conv2 = Conv2d(
-            n_chans_out, n_chans_out,
             3, stride, 1, bias = False
         )
-        self.bn2 = BatchNorm2d(n_chans_out)
-        self.conv3 = Conv2d(
-            n_chans_out, 4 * n_chans_out,
-            1, 1, 0, bias = False
-        )
-        self.bn3 = BatchNorm2d(4 * n_chans_out)
+        self.bn1 = BatchNorm2d(n_chans_out)
         self.relu = ReLU(inplace = True)
-        self.downsample = downsample
+        self.conv2 = Conv2d(
+            n_chans_out, n_chans_out,
+            3, 1, 1, bias = False
+        )
+        self.bn2 = BatchNorm2d(n_chans_out)
 
     def forward(self, x):
         id = x
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-
         x = self.conv2(x)
         x = self.bn2(x)
-        x = self.relu(x)
-
-        x = self.conv3(x)
-        x = self.bn3(x)
 
         if self.downsample is not None:
             id = self.downsample(id)
@@ -134,44 +124,22 @@ class ResNet(Module):
     def __init__(self, layers, n_cls):
         super(ResNet, self).__init__()
         self.n_chans_in = 64
+
+        # Prelude
         self.conv1 = Conv2d(3, 64, 7, 2, 3, bias = False)
         self.bn1 = BatchNorm2d(64)
         self.relu = ReLU(inplace = True)
         self.mp = MaxPool2d(3, 2, 1)
 
-        # ResNet layers
+        # Layers
         self.layer1 = self.make_layer(layers[0], 64, 1)
         self.layer2 = self.make_layer(layers[1], 128, 2)
         self.layer3 = self.make_layer(layers[2], 256, 2)
         self.layer4 = self.make_layer(layers[3], 512, 2)
 
+        # Classifier
         self.ap = AdaptiveAvgPool2d((1, 1))
-        self.fc = Linear(512 * 4, n_cls)
-
-    def make_layer(self, n_res_blocks, n_chans_out, stride):
-        id_downsample = None
-        layers = []
-
-        if stride != 1 or self.n_chans_in != 4 * n_chans_out:
-            id_downsample = Sequential(
-                Conv2d(
-                    self.n_chans_in, 4 * n_chans_out,
-                    1, stride, bias = False
-                ),
-                BatchNorm2d(4 * n_chans_out)
-            )
-
-        # Change number of channels
-        block = ResNetBlock(
-            self.n_chans_in, n_chans_out,
-            id_downsample, stride
-        )
-        layers.append(block)
-        self.n_chans_in = 4 * n_chans_out
-        for i in range(n_res_blocks - 1):
-            layers.append(ResNetBlock(self.n_chans_in, n_chans_out, None, 1))
-
-        return Sequential(*layers)
+        self.fc = Linear(512, n_cls)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -183,10 +151,33 @@ class ResNet(Module):
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+
         x = self.ap(x)
-        x = x.reshape(x.shape[0], -1)
+        x = x.view(x.size(0), -1)
         x = self.fc(x)
+
         return x
+
+    def make_layer(self, n_res_blocks, n_chans_out, stride):
+        downsample = None
+        if stride != 1:
+            downsample = Sequential(
+                Conv2d(
+                    self.n_chans_in, n_chans_out,
+                    1, stride, bias = False
+                ),
+                BatchNorm2d(n_chans_out)
+            )
+        layers = []
+        layers.append(
+            ResNetBasicBlock(self.n_chans_in, n_chans_out, downsample, stride)
+        )
+        self.n_chans_in = n_chans_out
+        for i in range(n_res_blocks - 1):
+            layers.append(ResNetBasicBlock(
+                self.n_chans_in, n_chans_out, None, 1
+            ))
+        return Sequential(*layers)
 
 # Build feature extraction layers based on spec
 def make_vgg_layers():
@@ -241,6 +232,14 @@ class VGG16(Module):
         x = x.view(x.size(0), -1)
         return self.classifier(x)
 
+def load_net(net_name, n_cls):
+    if net_name == 'vgg16':
+        return VGG16(n_cls)
+    elif net_name == 'resnet18':
+        return ResNet([2, 2, 2, 2], n_cls)
+        #return ResNet([3, 4, 6, 3], n_cls)
+    assert False
+
 ########################################################################
 # Training
 ########################################################################
@@ -292,7 +291,7 @@ def loader_sample_figure(loader, names, net):
 
 def main():
     from torchinfo import summary
-    net = ResNet([3, 4, 6, 3], 100)
+    net = load_net('resnet18', 100)
     summary(net, input_size=(1, 3, 32, 32), device="cpu")
 
 if __name__ == '__main__':

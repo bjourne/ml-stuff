@@ -1,8 +1,8 @@
 # Copyright (C) 2024 Björn A. Lindqvist
 #
-# VGG16 from scratch and trained on CIFAR10.
+# VGG16 and ResNet50 trained on CIFAR10/100.
 from clize import run
-from mlstuff import ResNet, ResNetBlock, VGG16, load_cifar, loader_sample_figure, propagate_epoch
+from mlstuff import load_cifar, load_net, loader_sample_figure, propagate_epoch
 from pathlib import Path
 from torch import no_grad
 from torch.optim import SGD
@@ -21,13 +21,6 @@ T_MAX = 200
 SGD_MOM = 0.9
 PRINT_INTERVAL = 10
 
-def load_net(net_name):
-    if net_name == 'vgg16':
-        return VGG16(N_CLS)
-    elif net_name == 'resnet50':
-        return ResNet([3, 4, 6, 3], N_CLS)
-    assert False
-
 def train(net_name):
     '''Trains a network
 
@@ -35,7 +28,8 @@ def train(net_name):
     '''
     #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dev = 'cpu'
-    net = load_net(net_name).to(dev)
+    #print(dev)
+    net = load_net(net_name, N_CLS).to(dev)
 
     dir = 'runs_%s' % net_name
     writer = SummaryWriter(LOG_PATH / dir)
