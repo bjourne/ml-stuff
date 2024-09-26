@@ -150,7 +150,6 @@ def make_resnet_layer(n_res_blocks, n_chans_in, n_chans_out, stride):
 class ResNet(Module):
     def __init__(self, layers, n_cls):
         super(ResNet, self).__init__()
-        self.n_chans_in = 64
 
         # Prelude
         self.conv1 = Conv2d(3, 64, 7, 2, 3, bias = False)
@@ -181,9 +180,45 @@ class ResNet(Module):
 
         x = self.ap(x)
         x = x.view(x.size(0), -1)
-        x = self.fc(x)
+        return self.fc(x)
 
-        return x
+# A smaller ResNet adapted for CIFAR10/100
+def make_resnet4cifar_layer(n_res_blocks, n_chans_in, n_chans_out, stride):
+    downsample = Sequential()
+    if stride != 1 or n_chans_in != n_chans_out:
+        downsample = Sequential(
+            Conv2d(n_chans_in, n_chans_out, 1, stride, 0, bias = False),
+            BatchNorm2d(n_chans_out)
+        )
+    yield ResNetBasicBlock(n_chans_in, n_chans_out, downsample, stride)
+    for i in range(n_res_blocks - 1):
+        yield ResNetBasicBlock(n_chans_out, n_chans_out, Sequential(), 1)
+
+class ResNet4CIFAR(Module):
+    def __init__(self, layers, n_cls):
+        super(ResNet4CIFAR, self).__init__()
+        self.conv1 = Conv2d(3, 16, 3, 1, 1, bias = False)
+        self.bn1 = BatchNorm2d(16)
+        self.relu = ReLU(inplace = True)
+
+        self.layer1 = Sequential(*make_resnet4cifar_layer(layers[0], 16, 16, 1))
+        self.layer2 = Sequential(*make_resnet4cifar_layer(layers[1], 16, 32, 2))
+        self.layer3 = Sequential(*make_resnet4cifar_layer(layers[2], 32, 64, 2))
+        self.ap = AvgPool2d((8, 8))
+        self.fc = Linear(64, n_cls)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.ap(x)
+
+        x = x.view(x.size(0), -1)
+        return self.fc(x)
 
 # Build feature extraction layers based on spec
 def make_vgg_layers():
@@ -243,6 +278,10 @@ def load_net(net_name, n_cls):
         return VGG16(n_cls)
     elif net_name == 'resnet18':
         return ResNet([2, 2, 2, 2], n_cls)
+    elif net_name == 'resnet20':
+        # Much smaller ResNet variant that may work well on CIFAR10/100
+        assert n_cls <= 100
+        return ResNet4CIFAR([3, 3, 3], n_cls)
     assert False
 
 ########################################################################
@@ -296,7 +335,7 @@ def loader_sample_figure(loader, names, net):
 
 def main():
     from torchinfo import summary
-    net = load_net('resnet18', 100)
+    net = load_net('resnet20', 100)
     summary(net, input_size=(1, 3, 32, 32), device="cpu")
 
 if __name__ == '__main__':
