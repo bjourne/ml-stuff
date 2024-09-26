@@ -17,7 +17,6 @@ from torchinfo import summary
 import torch
 
 N_CLS = 100
-BS = 256
 DATA_PATH = Path("/tmp/data")
 LOG_PATH = Path("/tmp/logs")
 LR = 0.1
@@ -34,10 +33,11 @@ def write_thetas(writer, net, epoch):
             kvs[name] = m.theta
     writer.add_scalars('thetas', kvs, epoch)
 
-def train(net_name):
+def train(net_name, batch_size: int):
     '''Trains a network
 
     :param net_name: Name of network to train
+    :param batch_size: Batch size
     '''
     #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dev = 'cpu'
@@ -45,10 +45,10 @@ def train(net_name):
     net = load_net(net_name, N_CLS).to(dev)
     summary(net)
 
-    dir = 'runs_%s' % net_name
+    dir = 'runs_%s_%03d' % (net_name, batch_size)
     writer = SummaryWriter(LOG_PATH / dir)
 
-    l_tr, l_te, names = load_cifar(DATA_PATH, BS, N_CLS, dev)
+    l_tr, l_te, names = load_cifar(DATA_PATH, batch_size, N_CLS, dev)
     opt = SGD(net.parameters(), LR, SGD_MOM)
     sched = CosineAnnealingLR(opt, T_max=T_MAX)
     max_te_acc = 0
