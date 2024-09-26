@@ -3,9 +3,10 @@
 # VGG16 and ResNet50 trained on CIFAR10/100.
 from clize import run
 from mlstuff import (
-    load_cifar, load_net, loader_sample_figure,
+    load_cifar, loader_sample_figure,
     propagate_epoch, seed_all
 )
+from mlstuff.networks import load_net
 from pathlib import Path
 from torch import no_grad
 from torch.optim import SGD
