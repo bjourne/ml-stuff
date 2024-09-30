@@ -34,8 +34,10 @@ Abbreviations:
 | CIFAR100 | ResNet18  | std     | 256 | aa  |      | 0.0 |     | 59.1 |       |
 | CIFAR100 | ResNet20  | std     | 256 | aa  | 1001 | 0.0 |     | 67.2 |       |
 | CIFAR100 | VGG16QCFS | std     | 256 | aa  | 1001 | 0.0 | 0.5 | 72.0 |       |
-| CIFAR100 | VGG16     | std     | 64  | aa  | 1001 | 0.0 | 0.5 | 65.9 | y/srv |
+| CIFAR100 | VGG16     | std     | 64  | aa  | 1001 | 0.0 | 0.5 | 66.0 | y/srv |
 | CIFAR100 | VGG16     | std     | 128 | aa  | 1001 | 0.0 | 0.5 | 74.6 | y/srv |
 | CIFAR100 | VGG16QCFS | std     | 128 | aa  | 1001 | 0.0 | 0.0 | 53.9 | n     |
 | CIFAR100 | VGG16     | std     | 32  | aa  | 1001 | 0.0 | 0.0 | 74.9 | n     |
-|          |           |         |     |     |      |     |     |      |       |
+| CIFAR100 | VGG16     | std     | 512 | aa  | 1001 | 0.0 | 0.0 |      | y/srv |
+| CIFAR100 | ResNet20  | std     | 512 | aa  | 1001 | 0.0 | 0.0 |      | y/dsk |
+| CIFAR100 | ResNet20  | std     | 256 | aa  | 1001 | 0.0 | 0.0 |      | y/dsk |
