@@ -122,16 +122,12 @@ class VGG16(Module):
         assert n_cls <= 100
         layers = list(make_vgg_layers())
         self.features = Sequential(*layers)
-
-        # Need to determine whether dropout is beneficial here...
         self.classifier = Sequential(
             Flatten(),
             Linear(512, 4096),
             ReLU(inplace = True),
-            Dropout(0.5),
             Linear(4096, 4096),
             ReLU(inplace = True),
-            Dropout(0.5),
             Linear(4096, n_cls),
         )
         for m in self.modules():
@@ -175,12 +171,21 @@ class QCFS(Module):
 class VGG16QCFS(VGG16):
     def __init__(self, n_cls, theta, L):
         super(VGG16QCFS, self).__init__(n_cls)
-
+        # Convert some layers to what Bu2023 uses. E.g., biased Conv2d
+        # layers and AvgPool2d over MaxPool2d.
         for m in self.modules():
             if isinstance(m, Sequential):
                 for i, m2 in enumerate(m):
                     if isinstance(m2, ReLU):
                         m[i] = QCFS(theta, L)
+                    elif isinstance(m2, Conv2d):
+
+                        m[i] = Conv2d(
+                            m2.in_channels, m2.out_channels,
+                            m2.kernel_size, m2.stride, m2.padding,
+                            bias = True)
+                    elif isinstance(m2, MaxPool2d):
+                        m[i] = AvgPool2d(2)
 
 def load_net(net_name, n_cls):
     if net_name == 'vgg16':

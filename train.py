@@ -4,7 +4,7 @@
 from clize import run
 from mlstuff import (
     load_cifar, loader_sample_figure,
-    propagate_epoch, seed_all
+    propagate_epoch, rename_bu2023, seed_all
 )
 from mlstuff.networks import QCFS, load_net
 from pathlib import Path
@@ -13,7 +13,6 @@ from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
 from torchinfo import summary
-
 import torch
 
 N_CLS = 100
@@ -23,7 +22,7 @@ LR = 0.1
 N_EPOCHS = 500
 T_MAX = N_EPOCHS
 SGD_MOM = 0.9
-PRINT_INTERVAL = 10
+PRINT_INTERVAL = 20
 SEED = 1001
 
 def write_thetas(writer, net, epoch):
@@ -39,9 +38,9 @@ def train(net_name, batch_size: int):
     :param net_name: Name of network to train
     :param batch_size: Batch size
     '''
-    #dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    dev = 'cpu'
     seed_all(SEED)
+
+    dev = 'cpu'
     net = load_net(net_name, N_CLS).to(dev)
     summary(net)
 
@@ -67,7 +66,6 @@ def train(net_name, batch_size: int):
         fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, (best %5.3f)"
         print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
 
-        # Per-net stats
         if net_name == 'vgg16qcfs':
             write_thetas(writer, net, i)
         writer.add_scalars('acc', {'train' : tr_acc, 'test' : te_acc}, i)
@@ -79,5 +77,28 @@ def train(net_name, batch_size: int):
         writer.flush()
         sched.step()
 
+def test(net_name, batch_size: int, weights_file):
+    '''Tests a network
+
+    :param net_name: Name of network to train
+    :param batch_size: Batch size
+    :param weights_file: Path to weights file
+    '''
+    seed_all(SEED)
+    dev = 'cpu'
+    net = load_net(net_name, N_CLS).to(dev)
+
+    d = torch.load(weights_file, weights_only = True)
+    d = rename_bu2023(d)
+    net.load_state_dict(d)
+
+    _, l_te, names = load_cifar(DATA_PATH, batch_size, N_CLS, dev)
+    net.eval()
+    with no_grad():
+        te_loss, te_acc = propagate_epoch(
+            net, None, l_te, 0, 1, 10
+        )
+    print("loss %5.3f, acc %5.3f" % (te_loss, te_acc))
+
 if __name__ == '__main__':
-    run(train)
+    run(train, test)
