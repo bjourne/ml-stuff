@@ -38,8 +38,6 @@ def train(net_name, batch_size: int):
     :param net_name: Name of network to train
     :param batch_size: Batch size
     '''
-    seed_all(SEED)
-
     dev = 'cpu'
     net = load_net(net_name, N_CLS).to(dev)
     summary(net)
@@ -84,21 +82,22 @@ def test(net_name, batch_size: int, weights_file):
     :param batch_size: Batch size
     :param weights_file: Path to weights file
     '''
-    seed_all(SEED)
     dev = 'cpu'
     net = load_net(net_name, N_CLS).to(dev)
 
-    d = torch.load(weights_file, weights_only = True)
-    d = rename_bu2023(d)
+    d = torch.load(weights_file, weights_only = True, map_location = 'cpu')
+    if net_name == 'vgg16qcfs':
+        d = rename_bu2023(d)
     net.load_state_dict(d)
 
     _, l_te, names = load_cifar(DATA_PATH, batch_size, N_CLS, dev)
     net.eval()
     with no_grad():
         te_loss, te_acc = propagate_epoch(
-            net, None, l_te, 0, 1, 10
+            net, None, l_te, 0, 1, PRINT_INTERVAL
         )
     print("loss %5.3f, acc %5.3f" % (te_loss, te_acc))
 
 if __name__ == '__main__':
+    seed_all(SEED)
     run(train, test)

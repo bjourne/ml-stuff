@@ -34,24 +34,33 @@ def seed_all(seed):
     torch.backends.cudnn.deterministic = True
 
 def rename_bu2023(d):
-    new_d = {}
-    renames = [
-        ('layer1.2.thresh', 'features.2.theta'),
-        ('layer1.6.thresh', 'features.5.theta'),
-        ('layer2.2.thresh', 'features.9.theta'),
-        ('layer2.6.thresh', 'features.12.theta'),
-        ('layer3.2.thresh', 'features.16.theta'),
-        ('layer3.6.thresh', 'features.19.theta'),
-        ('layer3.10.thresh', 'features.22.theta'),
-        ('layer4.2.thresh', 'features.26.theta'),
-        ('layer4.6.thresh', 'features.29.theta'),
-        ('layer4.10.thresh', 'features.32.theta'),
-        ('layer5.2.thresh', 'features.36.theta'),
-        ('layer5.6.thresh', 'features.39.theta'),
-        ('layer5.10.thresh', 'features.42.theta'),
-        ('classifier.2.thresh', 'classifier.2.theta'),
-        ('classifier.5.thresh', 'classifier.4.theta'),
-
+    endings = [
+        ('.thresh', '.theta')
+    ]
+    d2 = {}
+    for k, v in d.items():
+        k2 = k
+        for src, dst in endings:
+            if k.endswith(src):
+                k2 = k[:-len(src)] + dst
+                break
+        d2[k2] = v
+    starts = [
+        ('layer1.2', 'features.2'),
+        ('layer1.6', 'features.5'),
+        ('layer2.2', 'features.9'),
+        ('layer2.6', 'features.12'),
+        ('layer3.2', 'features.16'),
+        ('layer3.6', 'features.19'),
+        ('layer3.10', 'features.22'),
+        ('layer4.2', 'features.26'),
+        ('layer4.6', 'features.29'),
+        ('layer4.10', 'features.32'),
+        ('layer5.2', 'features.36'),
+        ('layer5.6', 'features.39'),
+        ('layer5.10', 'features.42'),
+        ('classifier.2', 'classifier.2'),
+        ('classifier.5', 'classifier.4'),
         ('layer1.0', 'features.0'),
         ('layer1.1', 'features.1'),
         ('layer1.4', 'features.3'),
@@ -83,14 +92,15 @@ def rename_bu2023(d):
         ('classifier.4', 'classifier.3'),
         ('classifier.7', 'classifier.5')
     ]
-    for k, v in d.items():
-        new_k = k
-        for src, dst in renames:
+    d3 = {}
+    for k, v in d2.items():
+        k2 = k
+        for src, dst in starts:
             if k.startswith(src):
-                new_k = dst + k[len(src):]
+                k2 = dst + k[len(src):]
                 break
-        new_d[new_k] = v
-    return new_d
+        d3[k2] = v
+    return d3
 
 ########################################################################
 # Data processing
