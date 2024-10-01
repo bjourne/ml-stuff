@@ -23,21 +23,21 @@ Abbreviations:
 
 | DATASET  | MODEL     | VER     | BS  | AUG | SEED | WD  | DO  | ACC  | PRG   |
 |----------|-----------|---------|-----|-----|------|-----|-----|------|-------|
-| CIFAR10  | VGG16     | std     | ?   | std |      | 0.0 | 0.5 | 93.6 |       |
-| CIFAR10  | VGG16     | lin-512 | ?   | std |      | 0.0 | 0.5 | 92.1 |       |
-| CIFAR10  | VGG16     | no-BN   | ?   | std |      | 0.0 | 0.5 | 92.6 |       |
-| CIFAR10  | DenseNet  | std     | 128 | std |      | 0.0 |     | 94.4 |       |
-| CIFAR100 | VGG16     | std     | 256 | std |      | 0.0 | 0.5 | 70.7 |       |
-| CIFAR100 | VGG16     | std     | 64  | std |      | 0.0 | 0.5 | 71.7 |       |
-| CIFAR100 | VGG16     | std     | 256 | aa  |      | 0.0 | 0.5 | 74.7 |       |
-| CIFAR100 | ResNet50  | std     | 256 | aa  |      | 0.0 |     | 47.8 |       |
-| CIFAR100 | ResNet18  | std     | 256 | aa  |      | 0.0 |     | 59.1 |       |
-| CIFAR100 | ResNet20  | std     | 256 | aa  | 1001 | 0.0 |     | 67.2 |       |
-| CIFAR100 | VGG16QCFS | std     | 256 | aa  | 1001 | 0.0 | 0.5 | 72.0 |       |
-| CIFAR100 | VGG16     | std     | 64  | aa  | 1001 | 0.0 | 0.5 | 66.0 | y/srv |
-| CIFAR100 | VGG16     | std     | 128 | aa  | 1001 | 0.0 | 0.5 | 74.6 | y/srv |
+| CIFAR10  | VGG16     | std     | ?   | std |      | 0.0 | 0.5 | 93.6 | n     |
+| CIFAR10  | VGG16     | lin-512 | ?   | std |      | 0.0 | 0.5 | 92.1 | n     |
+| CIFAR10  | VGG16     | no-BN   | ?   | std |      | 0.0 | 0.5 | 92.6 | n     |
+| CIFAR10  | DenseNet  | std     | 128 | std |      | 0.0 |     | 94.4 | n     |
+| CIFAR100 | VGG16     | std     | 256 | std |      | 0.0 | 0.5 | 70.7 | n     |
+| CIFAR100 | VGG16     | std     | 64  | std |      | 0.0 | 0.5 | 71.7 | n     |
+| CIFAR100 | VGG16     | std     | 256 | aa  |      | 0.0 | 0.5 | 74.7 | n     |
+| CIFAR100 | ResNet50  | std     | 256 | aa  |      | 0.0 |     | 47.8 | n     |
+| CIFAR100 | ResNet18  | std     | 256 | aa  |      | 0.0 |     | 59.1 | n     |
+| CIFAR100 | ResNet20  | std     | 256 | aa  | 1001 | 0.0 |     | 67.2 | n     |
+| CIFAR100 | VGG16QCFS | std     | 256 | aa  | 1001 | 0.0 | 0.5 | 72.0 | n     |
+| CIFAR100 | VGG16     | std     | 64  | aa  | 1001 | 0.0 | 0.5 | 66.5 | y/srv |
+| CIFAR100 | VGG16     | std     | 128 | aa  | 1001 | 0.0 | 0.5 | 74.8 | y/srv |
 | CIFAR100 | VGG16QCFS | std     | 128 | aa  | 1001 | 0.0 | 0.0 | 53.9 | n     |
 | CIFAR100 | VGG16     | std     | 32  | aa  | 1001 | 0.0 | 0.0 | 74.9 | n     |
-| CIFAR100 | VGG16     | std     | 512 | aa  | 1001 | 0.0 | 0.0 |      | y/srv |
-| CIFAR100 | ResNet20  | std     | 512 | aa  | 1001 | 0.0 | 0.0 |      | y/dsk |
-| CIFAR100 | ResNet20  | std     | 256 | aa  | 1001 | 0.0 | 0.0 |      | y/dsk |
+| CIFAR100 | VGG16     | std     | 512 | aa  | 1001 | 0.0 | 0.0 | 62.3 | y/srv |
+| CIFAR100 | ResNet20  | std     | 512 | aa  | 1001 | 0.0 | 0.0 | 69.1 | y/dsk |
+| CIFAR100 | ResNet20  | std     | 256 | aa  | 1001 | 0.0 | 0.0 | 69.4 | y/dsk |
