@@ -156,7 +156,7 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
     d_tr = cls(data_dir, True, t_tr, download = True)
     d_te = cls(data_dir, False, t_te, download = True)
     l_tr = DevDataLoader(dev, d_tr, batch_size, True, drop_last = True)
-    l_te = DevDataLoader(dev, d_te, batch_size, True, drop_last = True)
+    l_te = DevDataLoader(dev, d_te, batch_size, False, drop_last = True)
     if n_cls == 10:
         names = []
     else:
@@ -177,7 +177,6 @@ def propagate_epoch(net, opt, loader, epoch, n_epochs, print_interval):
     tot_loss = 0
     tot_acc = 0
     n = len(loader)
-    #n = 50
     for i, (x, y) in enumerate(islice(loader, n)):
         if net.training:
             opt.zero_grad()
@@ -187,7 +186,8 @@ def propagate_epoch(net, opt, loader, epoch, n_epochs, print_interval):
             loss.backward()
             opt.step()
         loss = loss.item()
-        acc = (yh.argmax(1) == y).sum().item() / y.size(0)
+        n_corr = (yh.argmax(1) == y).sum().item()
+        acc = n_corr / y.size(0)
         if i % print_interval == 0:
             print("%4d/%4d, loss/acc: %.4f/%.2f" % (i, n, loss, acc))
         tot_loss += loss

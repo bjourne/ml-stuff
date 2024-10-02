@@ -32,7 +32,7 @@ def write_thetas(writer, net, epoch):
             kvs[name] = m.theta
     writer.add_scalars('thetas', kvs, epoch)
 
-def train(net_name, batch_size: int):
+def train(net_name, batch_size: int, weight_decay: float):
     '''Trains a network
 
     :param net_name: Name of network to train
@@ -42,11 +42,12 @@ def train(net_name, batch_size: int):
     net = load_net(net_name, N_CLS).to(dev)
     summary(net)
 
-    dir = 'runs_%s_%03d' % (net_name, batch_size)
-    writer = SummaryWriter(LOG_PATH / dir)
+    dir_name = 'runs_%s_%03d_%.4f' % (net_name, batch_size, weight_decay)
+    out_dir = LOG_PATH / dir_name
+    writer = SummaryWriter(out_dir)
 
     l_tr, l_te, names = load_cifar(DATA_PATH, batch_size, N_CLS, dev)
-    opt = SGD(net.parameters(), LR, SGD_MOM)
+    opt = SGD(net.parameters(), LR, SGD_MOM, weight_decay = weight_decay)
     sched = CosineAnnealingLR(opt, T_max=T_MAX)
     max_te_acc = 0
 
@@ -60,6 +61,9 @@ def train(net_name, batch_size: int):
             te_loss, te_acc = propagate_epoch(
                 net, opt, l_te, i, N_EPOCHS, PRINT_INTERVAL
             )
+        if te_acc > max_te_acc:
+            torch.save(net.state_dict(), out_dir / 'net.pth')
+
         max_te_acc = max(max_te_acc, te_acc)
         fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, (best %5.3f)"
         print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
@@ -86,6 +90,7 @@ def test(net_name, batch_size: int, weights_file):
     net = load_net(net_name, N_CLS).to(dev)
 
     d = torch.load(weights_file, weights_only = True, map_location = 'cpu')
+
     if net_name == 'vgg16qcfs':
         d = rename_bu2023(d)
     net.load_state_dict(d)

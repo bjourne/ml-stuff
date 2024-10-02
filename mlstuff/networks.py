@@ -179,7 +179,6 @@ class VGG16QCFS(VGG16):
                     if isinstance(m2, ReLU):
                         m[i] = QCFS(theta, L)
                     elif isinstance(m2, Conv2d):
-
                         m[i] = Conv2d(
                             m2.in_channels, m2.out_channels,
                             m2.kernel_size, m2.stride, m2.padding,
