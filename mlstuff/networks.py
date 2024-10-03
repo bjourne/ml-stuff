@@ -157,34 +157,60 @@ class GradFloor(Function):
         return x
 
 class QCFS(Module):
-    def __init__(self, theta, L):
+    def __init__(self, theta, l):
         super(QCFS, self).__init__()
         self.theta = Parameter(torch.tensor([theta]), requires_grad=True)
-        self.L = L
+        self.l = l
+        self.n_time_steps = 0
 
     def forward(self, x):
+        if self.n_time_steps > 0:
+            theta = self.theta.data
+            if self.mem is None:
+                self.mem = torch.zeros_like(x) + theta * 0.5
+            self.mem += x
+            x = (self.mem - theta >= 0).float() * theta
+            self.mem -= x
+            return x
         x = x / self.theta
         x = torch.clamp(x, 0, 1)
-        x = GradFloor.apply(x * self.L + 0.5) / self.L
+        x = GradFloor.apply(x * self.l + 0.5) / self.l
         return x * self.theta
 
 class VGG16QCFS(VGG16):
-    def __init__(self, n_cls, theta, L):
-        super(VGG16QCFS, self).__init__(n_cls)
+    def __init__(self, n_cls, theta, l):
+        super().__init__(n_cls)
+        self.n_time_steps = None
         # Convert some layers to what Bu2023 uses. E.g., biased Conv2d
         # layers and AvgPool2d over MaxPool2d.
         for m in self.modules():
             if isinstance(m, Sequential):
                 for i, m2 in enumerate(m):
                     if isinstance(m2, ReLU):
-                        m[i] = QCFS(theta, L)
+                        m[i] = QCFS(theta, l)
                     elif isinstance(m2, Conv2d):
                         m[i] = Conv2d(
                             m2.in_channels, m2.out_channels,
                             m2.kernel_size, m2.stride, m2.padding,
-                            bias = True)
+                            bias = True
+                        )
                     elif isinstance(m2, MaxPool2d):
                         m[i] = AvgPool2d(2)
+
+    def set_snn_mode(self, n_time_steps):
+        self.n_time_steps = n_time_steps
+        for m in self.modules():
+            if isinstance(m, QCFS):
+                m.n_time_steps = n_time_steps
+
+    def forward(self, x):
+        if self.n_time_steps > 0:
+            for m in self.modules():
+                m.mem = None
+            y = [super().forward(x) for _ in range(self.n_time_steps)]
+            y = torch.stack(y)
+            return y.mean(0)
+        return super().forward(x)
 
 def load_net(net_name, n_cls):
     if net_name == 'vgg16':

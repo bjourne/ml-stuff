@@ -79,20 +79,21 @@ def train(net_name, batch_size: int, weight_decay: float):
         writer.flush()
         sched.step()
 
-def test(net_name, batch_size: int, weights_file):
+def test(net_name, batch_size: int, weights_file, *, time: int = None):
     '''Tests a network
 
     :param net_name: Name of network to train
     :param batch_size: Batch size
     :param weights_file: Path to weights file
+    :param time: Number of simulation time steps (for vgg16qcfs)
     '''
     dev = 'cpu'
     net = load_net(net_name, N_CLS).to(dev)
 
     d = torch.load(weights_file, weights_only = True, map_location = 'cpu')
-
     if net_name == 'vgg16qcfs':
         d = rename_bu2023(d)
+        net.set_snn_mode(time)
     net.load_state_dict(d)
 
     _, l_te, names = load_cifar(DATA_PATH, batch_size, N_CLS, dev)
