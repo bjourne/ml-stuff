@@ -34,12 +34,12 @@ Abbreviations:
 |          | CIFAR100 | ResNet18  | std     | 256 | aa  |      | 0.0    |     | 59.1 | n     |
 |          | CIFAR100 | ResNet20  | std     | 256 | aa  | 1001 | 0.0    |     | 67.2 | n     |
 |          | CIFAR100 | VGG16QCFS | std     | 256 | aa  | 1001 | 0.0    | 0.5 | 72.0 | n     |
-|          | CIFAR100 | VGG16     | std     | 64  | aa  | 1001 | 0.0    | 0.5 | 67.6 | y/srv |
-|          | CIFAR100 | VGG16     | std     | 128 | aa  | 1001 | 0.0    | 0.5 | 75.2 | y/srv |
+|          | CIFAR100 | VGG16     | std     | 64  | aa  | 1001 | 0.0    | 0.5 | 68.1 | y/srv |
+|          | CIFAR100 | VGG16     | std     | 128 | aa  | 1001 | 0.0    | 0.5 | 75.3 | y/srv |
 |          | CIFAR100 | VGG16QCFS | std     | 128 | aa  | 1001 | 0.0    | 0.0 | 53.9 | n     |
 |          | CIFAR100 | VGG16     | std     | 32  | aa  | 1001 | 0.0    | 0.0 | 74.9 | n     |
-|          | CIFAR100 | VGG16     | std     | 512 | aa  | 1001 | 0.0    | 0.0 | 71.0 | y/srv |
+|          | CIFAR100 | VGG16     | std     | 512 | aa  | 1001 | 0.0    | 0.0 | 72.3 | y/srv |
 | 20241001 | CIFAR100 | ResNet20  | std     | 512 | aa  | 1001 | 0.0    | 0.0 | 69.1 | n     |
 | 20241001 | CIFAR100 | ResNet20  | std     | 256 | aa  | 1001 | 0.0    | 0.0 | 69.4 | n     |
-| 20241002 | CIFAR100 | VGG16     | std     | 256 | aa  | 1001 | 0.0005 | 0.0 | 62.4 | y/dsk |
+| 20241002 | CIFAR100 | VGG16     | std     | 256 | aa  | 1001 | 0.0005 | 0.0 | 75.0 | y/dsk |
 |          |          |           |         |     |     |      |        |     |      |       |
