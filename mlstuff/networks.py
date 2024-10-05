@@ -9,7 +9,6 @@ import torch
 class ResNetBasicBlock(Module):
     def __init__(self, n_in, n_out, stride):
         super().__init__()
-
         self.residual = Sequential(
             Conv2d(n_in, n_out, 3, stride, 1, bias = False),
             BatchNorm2d(n_out),
@@ -26,7 +25,7 @@ class ResNetBasicBlock(Module):
         self.relu = ReLU(inplace = True)
 
     def forward(self, x):
-        return self.relu(x + self.shortcut(x))
+        return self.relu(self.residual(x) + self.shortcut(x))
 
 def make_resnet_layer(n_blocks, n_in, n_out, stride):
     strides = [stride] + [1] * (n_blocks - 1)
@@ -57,7 +56,6 @@ class ResNet(Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        x = self.mp(x)
 
         x = self.layer1(x)
         x = self.layer2(x)
@@ -85,6 +83,21 @@ class ResNetQCFS(ResNet):
         def change_relu(mod):
             return QCFS(theta, l)
         replace_modules(self, is_relu, change_relu)
+
+    def set_snn_mode(self, n_time_steps):
+        self.n_time_steps = n_time_steps
+        for m in self.modules():
+            if isinstance(m, QCFS):
+                m.n_time_steps = n_time_steps
+
+    def forward(self, x):
+        if self.n_time_steps > 0:
+            for m in self.modules():
+                m.mem = None
+            y = [super().forward(x) for _ in range(self.n_time_steps)]
+            y = torch.stack(y)
+            return y.mean(0)
+        return super().forward(x)
 
 # Small ResNet for CIFAR10/100
 class ResNet4CIFAR(Module):

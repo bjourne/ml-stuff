@@ -89,10 +89,9 @@ def test(net_name, batch_size: int, weights_file, *, time: int = None):
     '''
     dev = 'cpu'
     net = load_net(net_name, N_CLS).to(dev)
-
     d = torch.load(weights_file, weights_only = True, map_location = 'cpu')
-    if net_name == 'vgg16qcfs':
-        d = rename_bu2023(d)
+    if net_name.endswith('qcfs'):
+        d = rename_bu2023(net_name, d)
         net.set_snn_mode(time)
     net.load_state_dict(d)
 

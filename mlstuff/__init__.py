@@ -33,19 +33,47 @@ def seed_all(seed):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-def rename_bu2023(d):
-    endings = [
+BU2023_ENDINGS = {
+    'vgg16qcfs' : [
+        ('.thresh', '.theta')
+    ],
+    'resnet18qcfs' : [
         ('.thresh', '.theta')
     ]
-    d2 = {}
-    for k, v in d.items():
-        k2 = k
-        for src, dst in endings:
-            if k.endswith(src):
-                k2 = k[:-len(src)] + dst
-                break
-        d2[k2] = v
-    starts = [
+}
+
+BU2023_STARTS = {
+    'resnet18qcfs' : [
+        ('conv1.0', 'conv1'),
+        ('conv1.1', 'bn1'),
+        ('conv1.2', 'relu'),
+
+        ('conv2_x.0.act', 'layer1.0.relu'),
+        ('conv3_x.0.act', 'layer2.0.relu'),
+        ('conv4_x.0.act', 'layer3.0.relu'),
+        ('conv5_x.0.act', 'layer4.0.relu'),
+
+        ('conv2_x.1.act', 'layer1.1.relu'),
+        ('conv3_x.1.act', 'layer2.1.relu'),
+        ('conv4_x.1.act', 'layer3.1.relu'),
+        ('conv5_x.1.act', 'layer4.1.relu'),
+
+        ('conv2_x.0.shortcut', 'layer1.0.shortcut'),
+        ('conv3_x.0.shortcut', 'layer2.0.shortcut'),
+        ('conv4_x.0.shortcut', 'layer3.0.shortcut'),
+        ('conv5_x.0.shortcut', 'layer4.0.shortcut'),
+
+        ('conv2_x.0.residual_function', 'layer1.0.residual'),
+        ('conv3_x.0.residual_function', 'layer2.0.residual'),
+        ('conv4_x.0.residual_function', 'layer3.0.residual'),
+        ('conv5_x.0.residual_function', 'layer4.0.residual'),
+
+        ('conv2_x.1.residual_function', 'layer1.1.residual'),
+        ('conv3_x.1.residual_function', 'layer2.1.residual'),
+        ('conv4_x.1.residual_function', 'layer3.1.residual'),
+        ('conv5_x.1.residual_function', 'layer4.1.residual'),
+    ],
+    'vgg16qcfs' : [
         ('layer1.2', 'features.2'),
         ('layer1.6', 'features.5'),
         ('layer2.2', 'features.9'),
@@ -92,6 +120,21 @@ def rename_bu2023(d):
         ('classifier.4', 'classifier.3'),
         ('classifier.7', 'classifier.5')
     ]
+}
+
+
+def rename_bu2023(net_name, d):
+    endings = BU2023_ENDINGS[net_name]
+    d2 = {}
+    for k, v in d.items():
+        k2 = k
+        for src, dst in endings:
+            if k.endswith(src):
+                k2 = k[:-len(src)] + dst
+                break
+        d2[k2] = v
+
+    starts = BU2023_STARTS[net_name]
     d3 = {}
     for k, v in d2.items():
         k2 = k
