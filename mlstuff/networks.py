@@ -8,42 +8,40 @@ import torch
 # No expansion factor yet
 class ResNetBasicBlock(Module):
     def __init__(self, n_in, n_out, stride):
-        super(ResNetBasicBlock, self).__init__()
-        shortcut = []
+        super().__init__()
+
+        self.residual = Sequential(
+            Conv2d(n_in, n_out, 3, stride, 1, bias = False),
+            BatchNorm2d(n_out),
+            ReLU(inplace = True),
+            Conv2d(n_out, n_out, 3, 1, 1, bias = False),
+            BatchNorm2d(n_out)
+        )
+        self.shortcut = Sequential()
         if stride != 1 or n_in != n_out:
-            shortcut = [
+            self.shortcut = Sequential(
                 Conv2d(n_in, n_out, 1, stride, 0, bias = False),
                 BatchNorm2d(n_out)
-            ]
-        self.shortcut = Sequential(*shortcut)
-        self.conv1 = Conv2d(n_in, n_out, 3, stride, 1, bias = False)
-        self.bn1 = BatchNorm2d(n_out)
+            )
         self.relu = ReLU(inplace = True)
-        self.conv2 = Conv2d(n_out, n_out, 3, 1, 1, bias = False)
-        self.bn2 = BatchNorm2d(n_out)
 
-    def forward(self, orig):
-        x = self.conv1(orig)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.conv2(x)
-        x = self.bn2(x)
-        return self.relu(x + self.shortcut(orig))
+    def forward(self, x):
+        return self.relu(x + self.shortcut(x))
 
-def make_resnet_layer(n_res_blocks, n_in, n_out, stride):
-    yield ResNetBasicBlock(n_in, n_out, stride)
-    for i in range(n_res_blocks - 1):
-        yield ResNetBasicBlock(n_out, n_out, 1)
+def make_resnet_layer(n_blocks, n_in, n_out, stride):
+    strides = [stride] + [1] * (n_blocks - 1)
+    for stride in strides:
+        yield ResNetBasicBlock(n_in, n_out, stride)
+        n_in = n_out
 
 class ResNet(Module):
     def __init__(self, layers, n_cls):
-        super(ResNet, self).__init__()
+        super().__init__()
 
-        # Prelude
-        self.conv1 = Conv2d(3, 64, 7, 2, 3, bias = False)
+        # Prelude. Matches Bu2023's version.
+        self.conv1 = Conv2d(3, 64, 3, 1, 1, bias = False)
         self.bn1 = BatchNorm2d(64)
         self.relu = ReLU(inplace = True)
-        self.mp = MaxPool2d(3, 2, 1)
 
         # Layers
         self.layer1 = Sequential(*make_resnet_layer(layers[0], 64, 64, 1))
@@ -70,10 +68,28 @@ class ResNet(Module):
         x = x.view(x.size(0), -1)
         return self.fc(x)
 
+def replace_modules(mod, match_fun, new_fun):
+    for name, submod in mod.named_children():
+        if match_fun(submod):
+            setattr(mod, name, new_fun(submod))
+        replace_modules(submod, match_fun, new_fun)
+
+class ResNetQCFS(ResNet):
+    def __init__(self, layers, n_cls, theta, l):
+        super().__init__(layers, n_cls)
+        self.n_time_steps = None
+
+        def is_relu(mod):
+            return isinstance(mod, ReLU)
+
+        def change_relu(mod):
+            return QCFS(theta, l)
+        replace_modules(self, is_relu, change_relu)
+
 # Small ResNet for CIFAR10/100
 class ResNet4CIFAR(Module):
     def __init__(self, layers, n_cls):
-        super(ResNet4CIFAR, self).__init__()
+        super().__init__()
         self.conv1 = Conv2d(3, 16, 3, 1, 1, bias = False)
         self.bn1 = BatchNorm2d(16)
         self.relu = ReLU(inplace = True)
@@ -158,7 +174,7 @@ class GradFloor(Function):
 
 class QCFS(Module):
     def __init__(self, theta, l):
-        super(QCFS, self).__init__()
+        super().__init__()
         self.theta = Parameter(torch.tensor([theta]), requires_grad=True)
         self.l = l
         self.n_time_steps = 0
@@ -181,21 +197,28 @@ class VGG16QCFS(VGG16):
     def __init__(self, n_cls, theta, l):
         super().__init__(n_cls)
         self.n_time_steps = None
+
         # Convert some layers to what Bu2023 uses. E.g., biased Conv2d
         # layers and AvgPool2d over MaxPool2d.
-        for m in self.modules():
-            if isinstance(m, Sequential):
-                for i, m2 in enumerate(m):
-                    if isinstance(m2, ReLU):
-                        m[i] = QCFS(theta, l)
-                    elif isinstance(m2, Conv2d):
-                        m[i] = Conv2d(
-                            m2.in_channels, m2.out_channels,
-                            m2.kernel_size, m2.stride, m2.padding,
-                            bias = True
-                        )
-                    elif isinstance(m2, MaxPool2d):
-                        m[i] = AvgPool2d(2)
+        replace_modules(
+            self,
+            lambda m: isinstance(m, ReLU),
+            lambda m: QCFS(theta, l)
+        )
+        replace_modules(
+            self,
+            lambda m: isinstance(m, Conv2d),
+            lambda m: Conv2d(
+                m.in_channels, m.out_channels,
+                m.kernel_size, m.stride, m.padding,
+                bias = True
+            )
+        )
+        replace_modules(
+            self,
+            lambda m: isinstance(m, MaxPool2d),
+            lambda m: AvgPool2d(2)
+        )
 
     def set_snn_mode(self, n_time_steps):
         self.n_time_steps = n_time_steps
@@ -219,6 +242,8 @@ def load_net(net_name, n_cls):
         return VGG16QCFS(n_cls, 8.0, 8)
     elif net_name == 'resnet18':
         return ResNet([2, 2, 2, 2], n_cls)
+    elif net_name == 'resnet18qcfs':
+        return ResNetQCFS([2, 2, 2, 2], n_cls, 8.0, 8)
     elif net_name == 'resnet20':
         # Much smaller ResNet variant that may work well on CIFAR10/100
         assert n_cls <= 100
