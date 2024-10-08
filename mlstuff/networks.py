@@ -75,7 +75,7 @@ def replace_modules(mod, match_fun, new_fun):
 class ResNetQCFS(ResNet):
     def __init__(self, layers, n_cls, theta, l):
         super().__init__(layers, n_cls)
-        self.n_time_steps = None
+        self.n_time_steps = 0
 
         def is_relu(mod):
             return isinstance(mod, ReLU)
