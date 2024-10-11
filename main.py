@@ -22,7 +22,7 @@ LR = 0.1
 N_EPOCHS = 600
 T_MAX = N_EPOCHS
 SGD_MOM = 0.9
-PRINT_INTERVAL = 20
+PRINT_INTERVAL = 30
 SEED = 1001
 
 def write_thetas(writer, net, epoch):
@@ -93,7 +93,9 @@ def test(net_name, batch_size: int, weights_file, *, time: int = None):
     if net_name.endswith('qcfs'):
         d = rename_bu2023(net_name, d)
         net.set_snn_mode(time)
-    net.load_state_dict(d)
+        net.net.load_state_dict(d)
+    else:
+        net.load_state_dict(d)
 
     _, l_te, names = load_cifar(DATA_PATH, batch_size, N_CLS, dev)
     net.eval()

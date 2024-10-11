@@ -5,6 +5,46 @@ from torch.nn.init import constant_, kaiming_normal_, normal_
 
 import torch
 
+# From https://github.com/putshua/ANN_SNN_QCFS
+class GradFloor(Function):
+    @staticmethod
+    def forward(ctx, x):
+        return x.floor()
+
+    @staticmethod
+    def backward(ctx, x):
+        return x
+
+class QCFS(Module):
+    def __init__(self, theta, l):
+        super().__init__()
+        self.theta = Parameter(torch.tensor([theta]), requires_grad=True)
+        self.l = l
+        self.n_time_steps = 0
+
+    def forward(self, x):
+        if self.n_time_steps > 0:
+            theta = self.theta.data
+            if self.mem is None:
+                self.mem = torch.zeros_like(x) + theta * 0.5
+            self.mem += x
+            x = (self.mem - theta >= 0).float() * theta
+            self.mem -= x
+            return x
+        x = x / self.theta
+        x = torch.clamp(x, 0, 1)
+        x = GradFloor.apply(x * self.l + 0.5) / self.l
+        return x * self.theta
+
+def replace_modules(mod, match_fun, new_fun):
+    for name, submod in mod.named_children():
+        if match_fun(submod):
+            setattr(mod, name, new_fun(submod))
+        replace_modules(submod, match_fun, new_fun)
+
+def is_relu(mod):
+    return isinstance(mod, ReLU)
+
 # No expansion factor yet
 class ResNetBasicBlock(Module):
     def __init__(self, n_in, n_out, stride):
@@ -66,59 +106,32 @@ class ResNet(Module):
         x = x.view(x.size(0), -1)
         return self.fc(x)
 
-def replace_modules(mod, match_fun, new_fun):
-    for name, submod in mod.named_children():
-        if match_fun(submod):
-            setattr(mod, name, new_fun(submod))
-        replace_modules(submod, match_fun, new_fun)
-
-class ResNetQCFS(ResNet):
-    def __init__(self, layers, n_cls, theta, l):
-        super().__init__(layers, n_cls)
-        self.n_time_steps = 0
-
-        def is_relu(mod):
-            return isinstance(mod, ReLU)
-
-        def change_relu(mod):
-            return QCFS(theta, l)
-        replace_modules(self, is_relu, change_relu)
-
-    def set_snn_mode(self, n_time_steps):
-        self.n_time_steps = n_time_steps
-        for m in self.modules():
-            if isinstance(m, QCFS):
-                m.n_time_steps = n_time_steps
-
-    def forward(self, x):
-        if self.n_time_steps > 0:
-            for m in self.modules():
-                m.mem = None
-            y = [super().forward(x) for _ in range(self.n_time_steps)]
-            y = torch.stack(y)
-            return y.mean(0)
-        return super().forward(x)
-
-# Small ResNet for CIFAR10/100
-class ResNet4CIFAR(Module):
+class ResNetSmall(Module):
     def __init__(self, layers, n_cls):
         super().__init__()
+
+        # Prelude. Matches Bu2023's version.
         self.conv1 = Conv2d(3, 16, 3, 1, 1, bias = False)
         self.bn1 = BatchNorm2d(16)
         self.relu = ReLU(inplace = True)
+
+        # Layers
         self.layer1 = Sequential(*make_resnet_layer(layers[0], 16, 16, 1))
         self.layer2 = Sequential(*make_resnet_layer(layers[1], 16, 32, 2))
         self.layer3 = Sequential(*make_resnet_layer(layers[2], 32, 64, 2))
-        self.ap = AvgPool2d((8, 8))
+
+        self.ap = AdaptiveAvgPool2d((1, 1))
         self.fc = Linear(64, n_cls)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
+
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
+
         x = self.ap(x)
         x = x.view(x.size(0), -1)
         return self.fc(x)
@@ -175,51 +188,41 @@ class VGG16(Module):
         x = self.features(x)
         return self.classifier(x)
 
-# From https://github.com/putshua/ANN_SNN_QCFS
-class GradFloor(Function):
-    @staticmethod
-    def forward(ctx, x):
-        return x.floor()
-
-    @staticmethod
-    def backward(ctx, x):
-        return x
-
-class QCFS(Module):
-    def __init__(self, theta, l):
+class QCFSNetwork(Module):
+    def __init__(self, net, theta, l):
         super().__init__()
-        self.theta = Parameter(torch.tensor([theta]), requires_grad=True)
-        self.l = l
-        self.n_time_steps = 0
-
-    def forward(self, x):
-        if self.n_time_steps > 0:
-            theta = self.theta.data
-            if self.mem is None:
-                self.mem = torch.zeros_like(x) + theta * 0.5
-            self.mem += x
-            x = (self.mem - theta >= 0).float() * theta
-            self.mem -= x
-            return x
-        x = x / self.theta
-        x = torch.clamp(x, 0, 1)
-        x = GradFloor.apply(x * self.l + 0.5) / self.l
-        return x * self.theta
-
-class VGG16QCFS(VGG16):
-    def __init__(self, n_cls, theta, l):
-        super().__init__(n_cls)
-        self.n_time_steps = None
-
-        # Convert some layers to what Bu2023 uses. E.g., biased Conv2d
-        # layers and AvgPool2d over MaxPool2d.
         replace_modules(
-            self,
+            net,
             lambda m: isinstance(m, ReLU),
             lambda m: QCFS(theta, l)
         )
+        self.n_time_steps = None
+        self.net = net
+
+    def set_snn_mode(self, n_time_steps):
+        self.n_time_steps = n_time_steps
+        for m in self.net.modules():
+            if isinstance(m, QCFS):
+                m.n_time_steps = n_time_steps
+
+    def forward(self, x):
+        if self.n_time_steps > 0:
+            for m in self.net.modules():
+                m.mem = None
+            y = [self.net.forward(x) for _ in range(self.n_time_steps)]
+            y = torch.stack(y)
+            return y.mean(0)
+        return self.net.forward(x)
+
+def load_net(net_name, n_cls):
+    if net_name == 'vgg16':
+        return VGG16(n_cls)
+    elif net_name == 'resnet18':
+        return ResNet([2, 2, 2, 2], n_cls)
+    elif net_name == 'vgg16qcfs':
+        net = VGG16(n_cls)
         replace_modules(
-            self,
+            net,
             lambda m: isinstance(m, Conv2d),
             lambda m: Conv2d(
                 m.in_channels, m.out_channels,
@@ -228,37 +231,15 @@ class VGG16QCFS(VGG16):
             )
         )
         replace_modules(
-            self,
+            net,
             lambda m: isinstance(m, MaxPool2d),
             lambda m: AvgPool2d(2)
         )
-
-    def set_snn_mode(self, n_time_steps):
-        self.n_time_steps = n_time_steps
-        for m in self.modules():
-            if isinstance(m, QCFS):
-                m.n_time_steps = n_time_steps
-
-    def forward(self, x):
-        if self.n_time_steps > 0:
-            for m in self.modules():
-                m.mem = None
-            y = [super().forward(x) for _ in range(self.n_time_steps)]
-            y = torch.stack(y)
-            return y.mean(0)
-        return super().forward(x)
-
-def load_net(net_name, n_cls):
-    if net_name == 'vgg16':
-        return VGG16(n_cls)
-    elif net_name == 'vgg16qcfs':
-        return VGG16QCFS(n_cls, 8.0, 8)
-    elif net_name == 'resnet18':
-        return ResNet([2, 2, 2, 2], n_cls)
+        return QCFSNetwork(net, 8.0, 8)
     elif net_name == 'resnet18qcfs':
-        return ResNetQCFS([2, 2, 2, 2], n_cls, 8.0, 8)
-    elif net_name == 'resnet20':
-        # Much smaller ResNet variant that may work well on CIFAR10/100
-        assert n_cls <= 100
-        return ResNet4CIFAR([3, 3, 3], n_cls)
+        net = ResNet([2, 2, 2, 2], n_cls)
+        return QCFSNetwork(net, 8.0, 8)
+    elif net_name == 'resnet20qcfs':
+        net = ResNetSmall([3, 3, 3], n_cls)
+        return QCFSNetwork(net, 8.0, 8)
     assert False

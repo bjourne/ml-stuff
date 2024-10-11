@@ -42,5 +42,5 @@ Abbreviations:
 | 20241001 | CIFAR100 | ResNet20     | std     | 512 | aa  | 1001 | 0.0    | 0.0 | 69.1 | n     |
 | 20241001 | CIFAR100 | ResNet20     | std     | 256 | aa  | 1001 | 0.0    | 0.0 | 69.4 | n     |
 | 20241002 | CIFAR100 | VGG16        | std     | 256 | aa  | 1001 | 0.0005 | 0.0 | 77.6 | n     |
-| 20241006 | CIFAR100 | ResNet18QCFS | std     | 256 | aa  | 1001 | 0.0005 | 0.0 | 61.8 | y/dsk |
-| 20241006 | CIFAR100 | ResNet18QCFS | std     | 128 | aa  | 1001 | 0.0005 | 0.0 | 68.9 | y/dsk |
+| 20241006 | CIFAR100 | ResNet18QCFS | std     | 256 | aa  | 1001 | 0.0005 | 0.0 | 79.1 | y/dsk |
+| 20241006 | CIFAR100 | ResNet18QCFS | std     | 128 | aa  | 1001 | 0.0005 | 0.0 | 77.1 | y/dsk |
