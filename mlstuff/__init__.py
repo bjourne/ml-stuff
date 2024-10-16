@@ -5,6 +5,7 @@ from mlstuff.augment import CIFARPolicy, Cutout2
 from os import environ
 from pickle import load
 from random import seed as rseed
+from re import sub
 from torch.nn.functional import cross_entropy, mse_loss
 from torch.utils.data import DataLoader
 from torchtoolbox.transform import Cutout
@@ -42,7 +43,7 @@ BU2023_ENDINGS = {
     ],
     'resnet20qcfs' : [
         ('.thresh', '.theta')
-    ]
+    ],
 }
 
 BU2023_STARTS = {
@@ -158,8 +159,40 @@ BU2023_STARTS = {
     ]
 }
 
+BU2023_REGEXP_REPLS = {
+    'resnet34qcfs' : [
+        (r'^conv2_x\.(.*)$', r'layer1.\g<1>'),
+        (r'^conv3_x\.(.*)$', r'layer2.\g<1>'),
+        (r'^conv4_x\.(.*)$', r'layer3.\g<1>'),
+        (r'^conv5_x\.(.*)$', r'layer4.\g<1>'),
+
+        # Residual
+        (r'^([^\.]+)\.(\d)\.residual_function\.(\d)\.(\w+)$', r'\g<1>.\g<2>.residual.\g<3>.\g<4>'),
+
+        # Act
+        (r'^([^\.]+\.\d).act.([^\.]+)$', r'\g<1>.relu.\g<2>'),
+
+        # Free
+        (r'^conv1\.0\.([^\.]+)$', r'conv1.\g<1>'),
+        (r'^conv1\.1\.([^\.]+)$', r'bn1.\g<1>'),
+        (r'^conv1\.2\.([^\.]+)$', r'relu.\g<1>'),
+
+        # Theta
+        (r'^([^\.]+|[^\.]+\.\d\.[^\.]+|[^\.]+\.\d\.[^\.]+\.\d)\.thresh$',
+         r'\g<1>.theta'),
+    ]
+}
+
 
 def rename_bu2023(net_name, d):
+    repls = BU2023_REGEXP_REPLS[net_name]
+    d2 = {}
+    for k, v in d.items():
+        for pattern, repl in repls:
+            k = sub(pattern, repl, k)
+        d2[k] = v
+    return d2
+
     endings = BU2023_ENDINGS[net_name]
     d2 = {}
     for k, v in d.items():
@@ -302,4 +335,11 @@ def main():
     summary(net, input_size=(1, 3, 32, 32), device="cpu")
 
 if __name__ == '__main__':
-    main()
+    d = {
+        'conv5_x.2.act.thresh' : None,
+        'conv5_x.2.residual_function.4.running_mean' : None,
+        'relu.thresh' : None,
+        'conv1.0.weight' : None
+    }
+    d = rename_bu2023('resnet34qcfs', d)
+    print(d)

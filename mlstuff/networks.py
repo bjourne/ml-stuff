@@ -242,4 +242,7 @@ def load_net(net_name, n_cls):
     elif net_name == 'resnet20qcfs':
         net = ResNetSmall([3, 3, 3], n_cls)
         return QCFSNetwork(net, 8.0, 8)
+    elif net_name == 'resnet34qcfs':
+        net = ResNet([3, 4, 6, 3], n_cls)
+        return QCFSNetwork(net, 8.0, 8)
     assert False
