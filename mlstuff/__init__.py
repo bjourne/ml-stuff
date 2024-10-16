@@ -38,78 +38,9 @@ BU2023_ENDINGS = {
     'vgg16qcfs' : [
         ('.thresh', '.theta')
     ],
-    'resnet18qcfs' : [
-        ('.thresh', '.theta')
-    ],
-    'resnet20qcfs' : [
-        ('.thresh', '.theta')
-    ],
 }
 
 BU2023_STARTS = {
-    'resnet18qcfs' : [
-        ('conv1.0', 'conv1'),
-        ('conv1.1', 'bn1'),
-        ('conv1.2', 'relu'),
-
-        ('conv2_x.0.act', 'layer1.0.relu'),
-        ('conv3_x.0.act', 'layer2.0.relu'),
-        ('conv4_x.0.act', 'layer3.0.relu'),
-        ('conv5_x.0.act', 'layer4.0.relu'),
-
-        ('conv2_x.1.act', 'layer1.1.relu'),
-        ('conv3_x.1.act', 'layer2.1.relu'),
-        ('conv4_x.1.act', 'layer3.1.relu'),
-        ('conv5_x.1.act', 'layer4.1.relu'),
-
-        ('conv2_x.0.shortcut', 'layer1.0.shortcut'),
-        ('conv3_x.0.shortcut', 'layer2.0.shortcut'),
-        ('conv4_x.0.shortcut', 'layer3.0.shortcut'),
-        ('conv5_x.0.shortcut', 'layer4.0.shortcut'),
-
-        ('conv2_x.0.residual_function', 'layer1.0.residual'),
-        ('conv3_x.0.residual_function', 'layer2.0.residual'),
-        ('conv4_x.0.residual_function', 'layer3.0.residual'),
-        ('conv5_x.0.residual_function', 'layer4.0.residual'),
-
-        ('conv2_x.1.residual_function', 'layer1.1.residual'),
-        ('conv3_x.1.residual_function', 'layer2.1.residual'),
-        ('conv4_x.1.residual_function', 'layer3.1.residual'),
-        ('conv5_x.1.residual_function', 'layer4.1.residual'),
-    ],
-    'resnet20qcfs' : [
-        ('conv1.0', 'conv1'),
-        ('conv1.1', 'bn1'),
-        ('conv1.2', 'relu'),
-
-        ('conv2_x.0.shortcut', 'layer1.0.shortcut'),
-        ('conv3_x.0.shortcut', 'layer2.0.shortcut'),
-        ('conv4_x.0.shortcut', 'layer3.0.shortcut'),
-
-        ('conv2_x.0.residual_function', 'layer1.0.residual'),
-        ('conv3_x.0.residual_function', 'layer2.0.residual'),
-        ('conv4_x.0.residual_function', 'layer3.0.residual'),
-
-        ('conv2_x.1.residual_function', 'layer1.1.residual'),
-        ('conv3_x.1.residual_function', 'layer2.1.residual'),
-        ('conv4_x.1.residual_function', 'layer3.1.residual'),
-
-        ('conv2_x.2.residual_function', 'layer1.2.residual'),
-        ('conv3_x.2.residual_function', 'layer2.2.residual'),
-        ('conv4_x.2.residual_function', 'layer3.2.residual'),
-
-        ('conv2_x.0.act', 'layer1.0.relu'),
-        ('conv3_x.0.act', 'layer2.0.relu'),
-        ('conv4_x.0.act', 'layer3.0.relu'),
-
-        ('conv2_x.1.act', 'layer1.1.relu'),
-        ('conv3_x.1.act', 'layer2.1.relu'),
-        ('conv4_x.1.act', 'layer3.1.relu'),
-
-        ('conv2_x.2.act', 'layer1.2.relu'),
-        ('conv3_x.2.act', 'layer2.2.relu'),
-        ('conv4_x.2.act', 'layer3.2.relu'),
-    ],
     'vgg16qcfs' : [
         ('layer1.2', 'features.2'),
         ('layer1.6', 'features.5'),
@@ -183,6 +114,8 @@ BU2023_REGEXP_REPLS = {
     ]
 }
 
+BU2023_REGEXP_REPLS['resnet18qcfs'] = BU2023_REGEXP_REPLS['resnet34qcfs']
+BU2023_REGEXP_REPLS['resnet20qcfs'] = BU2023_REGEXP_REPLS['resnet34qcfs']
 
 def rename_bu2023(net_name, d):
     repls = BU2023_REGEXP_REPLS[net_name]
@@ -193,26 +126,26 @@ def rename_bu2023(net_name, d):
         d2[k] = v
     return d2
 
-    endings = BU2023_ENDINGS[net_name]
-    d2 = {}
-    for k, v in d.items():
-        k2 = k
-        for src, dst in endings:
-            if k.endswith(src):
-                k2 = k[:-len(src)] + dst
-                break
-        d2[k2] = v
+    # endings = BU2023_ENDINGS[net_name]
+    # d2 = {}
+    # for k, v in d.items():
+    #     k2 = k
+    #     for src, dst in endings:
+    #         if k.endswith(src):
+    #             k2 = k[:-len(src)] + dst
+    #             break
+    #     d2[k2] = v
 
-    starts = BU2023_STARTS[net_name]
-    d3 = {}
-    for k, v in d2.items():
-        k2 = k
-        for src, dst in starts:
-            if k.startswith(src):
-                k2 = dst + k[len(src):]
-                break
-        d3[k2] = v
-    return d3
+    # starts = BU2023_STARTS[net_name]
+    # d3 = {}
+    # for k, v in d2.items():
+    #     k2 = k
+    #     for src, dst in starts:
+    #         if k.startswith(src):
+    #             k2 = dst + k[len(src):]
+    #             break
+    #     d3[k2] = v
+    # return d3
 
 ########################################################################
 # Data processing
