@@ -34,63 +34,33 @@ def seed_all(seed):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-BU2023_ENDINGS = {
-    'vgg16qcfs' : [
-        ('.thresh', '.theta')
-    ],
-}
-
 BU2023_STARTS = {
     'vgg16qcfs' : [
-        ('layer1.2', 'features.2'),
-        ('layer1.6', 'features.5'),
-        ('layer2.2', 'features.9'),
-        ('layer2.6', 'features.12'),
-        ('layer3.2', 'features.16'),
-        ('layer3.6', 'features.19'),
-        ('layer3.10', 'features.22'),
-        ('layer4.2', 'features.26'),
-        ('layer4.6', 'features.29'),
-        ('layer4.10', 'features.32'),
-        ('layer5.2', 'features.36'),
-        ('layer5.6', 'features.39'),
-        ('layer5.10', 'features.42'),
         ('classifier.2', 'classifier.2'),
         ('classifier.5', 'classifier.4'),
-        ('layer1.0', 'features.0'),
-        ('layer1.1', 'features.1'),
-        ('layer1.4', 'features.3'),
-        ('layer1.5', 'features.4'),
-        ('layer2.0', 'features.7'),
-        ('layer2.1', 'features.8'),
-        ('layer2.4', 'features.10'),
-        ('layer2.5', 'features.11'),
-        ('layer3.0', 'features.14'),
-        ('layer3.1', 'features.15'),
-        ('layer3.4', 'features.17'),
-        ('layer3.5', 'features.18'),
-        ('layer3.8', 'features.20'),
-        ('layer3.9', 'features.21'),
-        ('layer4.0', 'features.24'),
-        ('layer4.1', 'features.25'),
-        ('layer4.4', 'features.27'),
-        ('layer4.5', 'features.28'),
-        ('layer4.8', 'features.30'),
-        ('layer4.9', 'features.31'),
-        ('layer5.0', 'features.34'),
-        ('layer5.1', 'features.35'),
-        ('layer5.4', 'features.37'),
-        ('layer5.5', 'features.38'),
-        ('layer5.6', 'features.39'),
-        ('layer5.8', 'features.40'),
-        ('layer5.9', 'features.41'),
-        ('layer5.10', 'features.42'),
         ('classifier.4', 'classifier.3'),
         ('classifier.7', 'classifier.5')
     ]
 }
 
+def vgg16_repl(m):
+    old_idx = int(m.group(1)), int(m.group(2))
+    d = {
+        (1, 0) : 0, (1, 1) : 1, (1, 2) : 2, (1, 4) : 3, (1, 5) : 4, (1, 6) : 5,
+        (2, 0) : 7, (2, 1) : 8, (2, 2) : 9, (2, 4) : 10, (2, 5) : 11, (2, 6) : 12,
+        (3, 0) : 14, (3, 1) : 15, (3, 2) : 16, (3, 4) : 17, (3, 5) : 18, (3, 6) : 19, (3, 8) : 20, (3, 9) : 21, (3, 10) : 22,
+        (4, 0) : 24, (4, 1) : 25, (4, 2) : 26, (4, 4) : 27, (4, 5) : 28, (4, 6) : 29, (4, 8) : 30, (4, 9) : 31, (4, 10) : 32,
+        (5, 0) : 34, (5, 1) : 35, (5, 2) : 36, (5, 4) : 37, (5, 5) : 38, (5, 6) : 39, (5, 8) : 40, (5, 9) : 41, (5, 10) : 42
+    }
+    new_idx = d[old_idx]
+    rem = m.group(3)
+    return 'features.%d.%s' % (new_idx, rem)
+
 BU2023_REGEXP_REPLS = {
+    'vgg16qcfs' : [
+        (r'^layer(\d)\.(\d+)\.([^\.]+)$', vgg16_repl),
+        (r'^([^\.]+)\.(\d+)\.thresh$', r'\g<1>.\g<2>.theta')
+    ],
     'resnet34qcfs' : [
         (r'^conv2_x\.(.*)$', r'layer1.\g<1>'),
         (r'^conv3_x\.(.*)$', r'layer2.\g<1>'),
@@ -124,28 +94,16 @@ def rename_bu2023(net_name, d):
         for pattern, repl in repls:
             k = sub(pattern, repl, k)
         d2[k] = v
-    return d2
-
-    # endings = BU2023_ENDINGS[net_name]
-    # d2 = {}
-    # for k, v in d.items():
-    #     k2 = k
-    #     for src, dst in endings:
-    #         if k.endswith(src):
-    #             k2 = k[:-len(src)] + dst
-    #             break
-    #     d2[k2] = v
-
-    # starts = BU2023_STARTS[net_name]
-    # d3 = {}
-    # for k, v in d2.items():
-    #     k2 = k
-    #     for src, dst in starts:
-    #         if k.startswith(src):
-    #             k2 = dst + k[len(src):]
-    #             break
-    #     d3[k2] = v
-    # return d3
+    starts = BU2023_STARTS.get(net_name, [])
+    d3 = {}
+    for k, v in d2.items():
+        k2 = k
+        for src, dst in starts:
+            if k.startswith(src):
+                k2 = dst + k[len(src):]
+                break
+        d3[k2] = v
+    return d3
 
 ########################################################################
 # Data processing
@@ -269,10 +227,7 @@ def main():
 
 if __name__ == '__main__':
     d = {
-        'conv5_x.2.act.thresh' : None,
-        'conv5_x.2.residual_function.4.running_mean' : None,
-        'relu.thresh' : None,
-        'conv1.0.weight' : None
+        'layer3.1.weight' : None,
     }
-    d = rename_bu2023('resnet34qcfs', d)
+    d = rename_bu2023('vgg16qcfs', d)
     print(d)
