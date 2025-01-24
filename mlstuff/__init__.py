@@ -1,4 +1,4 @@
-# Copyright (C) 2024 Björn A. Lindqvist
+# Copyright (C) 2024-2025 Björn A. Lindqvist <bjourne@gmail.com>
 from itertools import islice
 from matplotlib import pyplot
 from mlstuff.augment import CIFARPolicy, Cutout2
@@ -8,7 +8,6 @@ from random import seed as rseed
 from re import sub
 from torch.nn.functional import cross_entropy, mse_loss
 from torch.utils.data import DataLoader
-from torchtoolbox.transform import Cutout
 from torchvision.datasets import CIFAR10, CIFAR100
 from torchvision.transforms import (
     Compose,
@@ -135,7 +134,7 @@ def transforms_std():
     )
     tr = Compose([
         RandomCrop(32, padding = 4),
-        Cutout(),
+        Cutout2(n_holes = 1, length = 8),
         RandomHorizontalFlip(),
         ToTensor(),
         norm
@@ -173,6 +172,18 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
 ########################################################################
 # Training
 ########################################################################
+def forward_batch(net, opt, x, y):
+    if net.training:
+        opt.zero_grad()
+    yh = net(x)
+    loss = cross_entropy(yh, y)
+    if net.training:
+        loss.backward()
+        opt.step()
+    n_corr = (yh.argmax(1) == y).sum().item()
+    acc = n_corr / y.size(0)
+    return loss.item(), acc
+
 def propagate_epoch(net, opt, loader, epoch, n_epochs, print_interval):
     phase = "train" if net.training else "test"
     args = phase, epoch, n_epochs
@@ -181,16 +192,7 @@ def propagate_epoch(net, opt, loader, epoch, n_epochs, print_interval):
     tot_acc = 0
     n = len(loader)
     for i, (x, y) in enumerate(islice(loader, n)):
-        if net.training:
-            opt.zero_grad()
-        yh = net(x)
-        loss = cross_entropy(yh, y)
-        if net.training:
-            loss.backward()
-            opt.step()
-        loss = loss.item()
-        n_corr = (yh.argmax(1) == y).sum().item()
-        acc = n_corr / y.size(0)
+        loss, acc = forward_batch(net, opt, x, y)
         if i % print_interval == 0:
             print("%4d/%4d, loss/acc: %.4f/%.2f" % (i, n, loss, acc))
         tot_loss += loss
