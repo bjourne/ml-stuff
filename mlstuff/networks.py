@@ -1,4 +1,4 @@
-# Copyright (C) 2024 Björn A. Lindqvist
+# Copyright (C) 2024-2025 Björn A. Lindqvist <bjourne@gmail.com>
 from torch.autograd import Function
 from torch.nn import *
 from torch.nn.init import constant_, kaiming_normal_, normal_
@@ -22,19 +22,25 @@ class QCFS(Module):
         self.l = l
         self.n_time_steps = 0
 
-    def forward(self, x):
-        if self.n_time_steps > 0:
-            theta = self.theta.data
-            if self.mem is None:
-                self.mem = torch.zeros_like(x) + theta * 0.5
-            self.mem += x
-            x = (self.mem - theta >= 0).float() * theta
-            self.mem -= x
-            return x
+    def forward_qcfs(self, x):
         x = x / self.theta
         x = torch.clamp(x, 0, 1)
         x = GradFloor.apply(x * self.l + 0.5) / self.l
         return x * self.theta
+
+    def forward_if(self, x):
+        theta = self.theta.data
+        if self.mem is None:
+            self.mem = torch.zeros_like(x) + theta * 0.5
+        self.mem += x
+        x = (self.mem - theta >= 0).float() * theta
+        self.mem -= x
+        return x
+
+    def forward(self, x):
+        if self.n_time_steps > 0:
+            return self.forward_if(x)
+        return self.forward_qcfs(x)
 
 def replace_modules(mod, match_fun, new_fun):
     for name, submod in mod.named_children():
@@ -77,7 +83,7 @@ class ResNet(Module):
     def __init__(self, layers, n_cls):
         super().__init__()
 
-        # Prelude. Matches Bu2023's version.
+        # Prelude matches Bu2023's version.
         self.conv1 = Conv2d(3, 64, 3, 1, 1, bias = False)
         self.bn1 = BatchNorm2d(64)
         self.relu = ReLU(inplace = True)
@@ -110,7 +116,7 @@ class ResNetSmall(Module):
     def __init__(self, layers, n_cls):
         super().__init__()
 
-        # Prelude. Matches Bu2023's version.
+        # Prelude matches Bu2023's version.
         self.conv1 = Conv2d(3, 16, 3, 1, 1, bias = False)
         self.bn1 = BatchNorm2d(16)
         self.relu = ReLU(inplace = True)
