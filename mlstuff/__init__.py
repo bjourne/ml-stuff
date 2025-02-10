@@ -188,7 +188,8 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
         num_workers = 16
     )
     l_te = DevDataLoader(
-        dev, d_te, batch_size, False,
+        dev, d_te, batch_size,
+        shuffle = True,
         drop_last = True,
         num_workers = 16
     )
