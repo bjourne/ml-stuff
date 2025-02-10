@@ -8,6 +8,7 @@ from random import seed as rseed
 from re import sub
 from torch.nn.functional import cross_entropy, mse_loss
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from torchvision.datasets import CIFAR10, CIFAR100
 from torchvision.transforms import (
     Compose,
@@ -45,11 +46,16 @@ BU2023_STARTS = {
 def vgg16_repl(m):
     old_idx = int(m.group(1)), int(m.group(2))
     d = {
-        (1, 0) : 0, (1, 1) : 1, (1, 2) : 2, (1, 4) : 3, (1, 5) : 4, (1, 6) : 5,
-        (2, 0) : 7, (2, 1) : 8, (2, 2) : 9, (2, 4) : 10, (2, 5) : 11, (2, 6) : 12,
-        (3, 0) : 14, (3, 1) : 15, (3, 2) : 16, (3, 4) : 17, (3, 5) : 18, (3, 6) : 19, (3, 8) : 20, (3, 9) : 21, (3, 10) : 22,
-        (4, 0) : 24, (4, 1) : 25, (4, 2) : 26, (4, 4) : 27, (4, 5) : 28, (4, 6) : 29, (4, 8) : 30, (4, 9) : 31, (4, 10) : 32,
-        (5, 0) : 34, (5, 1) : 35, (5, 2) : 36, (5, 4) : 37, (5, 5) : 38, (5, 6) : 39, (5, 8) : 40, (5, 9) : 41, (5, 10) : 42
+        (1, 0) : 0, (1, 1) : 1, (1, 2) : 2, (1, 4) : 3, (1, 5) : 4,
+        (1, 6) : 5,
+        (2, 0) : 7, (2, 1) : 8, (2, 2) : 9, (2, 4) : 10, (2, 5) : 11,
+        (2, 6) : 12,
+        (3, 0) : 14, (3, 1) : 15, (3, 2) : 16, (3, 4) : 17, (3, 5) : 18,
+        (3, 6) : 19, (3, 8) : 20, (3, 9) : 21, (3, 10) : 22,
+        (4, 0) : 24, (4, 1) : 25, (4, 2) : 26, (4, 4) : 27, (4, 5) : 28,
+        (4, 6) : 29, (4, 8) : 30, (4, 9) : 31, (4, 10) : 32,
+        (5, 0) : 34, (5, 1) : 35, (5, 2) : 36, (5, 4) : 37, (5, 5) : 38,
+        (5, 6) : 39, (5, 8) : 40, (5, 9) : 41, (5, 10) : 42
     }
     new_idx = d[old_idx]
     rem = m.group(3)
@@ -121,10 +127,7 @@ def transforms_aa():
         norm,
         Cutout2(n_holes=1, length=16)
     ])
-    te = Compose([
-        ToTensor(),
-        norm
-    ])
+    te = Compose([ToTensor(), norm])
     return tr, te
 
 def transforms_std():
@@ -152,13 +155,43 @@ class DevDataLoader(DataLoader):
         for x, y in super().__iter__():
             yield x.to(self.dev), y.to(self.dev)
 
+def get_device():
+    lo_rank = environ.get("LOCAL_RANK")
+    if lo_rank is not None:
+        return int(lo_rank)
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
+
+def is_primary(dev):
+    return dev in {0, "cuda", "cpu"}
+
+def is_distributed(dev):
+    return type(dev) == int
+
 def load_cifar(data_dir, batch_size, n_cls, dev):
     t_tr, t_te = transforms_aa()
     cls = CIFAR10 if n_cls == 10 else CIFAR100
-    d_tr = cls(data_dir, True, t_tr, download = True)
-    d_te = cls(data_dir, False, t_te, download = True)
-    l_tr = DevDataLoader(dev, d_tr, batch_size, True, drop_last = True)
-    l_te = DevDataLoader(dev, d_te, batch_size, False, drop_last = True)
+    d_tr = cls(data_dir, True, t_tr, download = is_primary(dev))
+    d_te = cls(data_dir, False, t_te, download = is_primary(dev))
+
+    sampler = None
+    shuffle = True
+    if is_distributed(dev):
+        sampler = DistributedSampler(dataset=d_tr)
+        shuffle = False
+    l_tr = DevDataLoader(
+        dev, d_tr, batch_size,
+        shuffle = shuffle,
+        sampler = sampler,
+        drop_last = True,
+        num_workers = 16
+    )
+    l_te = DevDataLoader(
+        dev, d_te, batch_size, False,
+        drop_last = True,
+        num_workers = 16
+    )
     if n_cls == 10:
         names = []
     else:
@@ -184,16 +217,17 @@ def forward_batch(net, opt, x, y):
     acc = n_corr / y.size(0)
     return loss.item(), acc
 
-def propagate_epoch(net, opt, loader, epoch, n_epochs, print_interval):
-    phase = "train" if net.training else "test"
-    args = phase, epoch, n_epochs
-    print("== %s %3d/%3d ==" % args)
+def propagate_epoch(dev, net, opt, loader, epoch, n_epochs, print_interval):
+    if is_primary(dev):
+        phase = "train" if net.training else "test"
+        args = phase, epoch, n_epochs
+        print("== %s %3d/%3d ==" % args)
     tot_loss = 0
     tot_acc = 0
     n = len(loader)
     for i, (x, y) in enumerate(islice(loader, n)):
         loss, acc = forward_batch(net, opt, x, y)
-        if i % print_interval == 0:
+        if i % print_interval == 0 and is_primary(dev):
             print("%4d/%4d, loss/acc: %.4f/%.2f" % (i, n, loss, acc))
         tot_loss += loss
         tot_acc += acc
