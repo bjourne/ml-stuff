@@ -172,8 +172,8 @@ def is_distributed(dev):
 def load_cifar(data_dir, batch_size, n_cls, dev):
     t_tr, t_te = transforms_aa()
     cls = CIFAR10 if n_cls == 10 else CIFAR100
-    d_tr = cls(data_dir, True, t_tr, download = is_primary(dev))
-    d_te = cls(data_dir, False, t_te, download = is_primary(dev))
+    d_tr = cls(data_dir, True, t_tr, download = True)
+    d_te = cls(data_dir, False, t_te, download = True)
 
     sampler = None
     shuffle = True
