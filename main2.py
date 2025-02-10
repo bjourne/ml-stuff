@@ -90,7 +90,7 @@ def write_epoch_stats(
 @click.option(
     "--data-dir",
     default = "/tmp/data",
-    type = click.Path(exists = True, dir_okay = True),
+    type = click.Path(dir_okay = True),
     help = "Dataset directory"
 )
 @click.option(
@@ -114,7 +114,9 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
         )
 
     # Load dataset
-    data = load_cifar(Path(data_dir), batch_size, n_cls, dev)
+    data_path = Path(data_dir)
+    data_path.mkdir(parents = True, exist_ok = True)
+    data = load_cifar(data_path, batch_size, n_cls, dev)
     ctx.obj = dict(
         net_name = network,
         net = net,
@@ -132,7 +134,7 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
 @click.option(
     "--log-dir",
     default = "/tmp/logs",
-    type = click.Path(exists = True, dir_okay = True),
+    type = click.Path(dir_okay = True),
     help = "Logging directory"
 )
 @click.option(
@@ -167,8 +169,7 @@ def train(
     learning_rate: float,
     sgd_momentum: float,
     t_max: int,
-    n_epochs: int,
-    print_interval: int
+    n_epochs: int
 ):
     obj = ctx.obj
     net_name = obj["net_name"]
@@ -176,13 +177,16 @@ def train(
     dev = obj["dev"]
     batch_size = obj["batch_size"]
     l_tr, l_te, names = obj["data"]
+    print_interval = obj["print_interval"]
     if is_distributed(dev):
         init_process_group(backend="nccl")
         torch.cuda.set_device(dev)
     print_device(dev)
 
     dir_name = 'runs_%s_%03d_%.4f' % (net_name, batch_size, weight_decay)
-    out_dir = Path(log_dir) / dir_name
+    log_path = Path(log_dir)
+    log_path.mkdir(parents = True, exist_ok = True)
+    out_dir = log_path / dir_name
     writer = SummaryWriter(out_dir)
     opt = SGD(
         net.parameters(),
