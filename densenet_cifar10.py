@@ -48,22 +48,26 @@ import torch
 import torch.multiprocessing as mp
 
 N_CLS = 10
-BS = 256
+BS = 128
 DATA_DIR = Path("/tmp/data")
 LR = 0.1
 N_EPOCHS = 500
 T_MAX = 50
 SGD_MOM = 0.9
 
-PRINT_INT = 1
+PRINT_INT = 10
 
-GL_RANK = environ.get("RANK")
-LO_RANK = environ.get("LOCAL_RANK")
-IS_DISTR = LO_RANK is not None
+def get_device():
+    lo_rank = environ.get("LOCAL_RANK")
+    if lo_rank is not None:
+        return int(lo_rank)
+    if torch.cuda.is_available():
+        return "cuda"
+    return "cpu"
 
-DEV = LO_RANK
-if IS_DISTR:
-    DEV = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEV = get_device()
+IS_DISTR = type(DEV) == int
+IS_PRIMARY = (not IS_DISTR) or (IS_DISTR and DEV == 0)
 
 ########################################################################
 # Model definition
@@ -207,15 +211,14 @@ def evaluate(net, l_te, epoch, tr_loss, tr_acc, tr_dur, max_te_acc):
         max_te_acc,
         tr_dur, te_dur
     )
-    if not LO_RANK:
+    if IS_PRIMARY:
         print(fmt % args)
     return max_te_acc
 
 
 def propagate_epoch(net, opt, loader, epoch):
     bef = time()
-    print(LO_RANK)
-    if not LO_RANK:
+    if IS_PRIMARY:
         phase = "train" if net.training else "test"
         args = phase, epoch, N_EPOCHS
         print("== %s %3d/%3d ==" % args)
@@ -234,18 +237,25 @@ def propagate_epoch(net, opt, loader, epoch):
             opt.step()
         loss = loss.item()
         acc = (yh.argmax(1) == y).sum().item() / BS
-        if i % PRINT_INT == 0 and not LO_RANK:
+        if i % PRINT_INT == 0 and IS_PRIMARY:
             print("%4d/%4d, loss/acc: %.4f/%.2f" % (i, n, loss, acc))
         tot_loss += loss
         tot_acc += acc
     return tot_loss / n, tot_acc / n, time() - bef
 
+def print_banner(net):
+    if IS_DISTR:
+        n_devs = torch.cuda.device_count()
+        print("Training process %d of %d" % (DEV, n_devs))
+    else:
+        print("Running on device %s" % DEV)
+    if IS_PRIMARY:
+        summary(net, input_size=(1, 3, 32, 32), device=DEV)
+
 def main():
-    n_devs = torch.cuda.device_count()
     if IS_DISTR:
         init_process_group(backend="nccl")
-        torch.cuda.set_device(LO_RANK)
-    print("Process %d/%d" % (LO_RANK or 0, n_devs))
+        torch.cuda.set_device(DEV)
 
     l_tr, l_te = load_cifar10(DATA_DIR, BS, IS_DISTR)
 
@@ -257,8 +267,7 @@ def main():
             device_ids = [DEV],
             output_device = DEV
         )
-    if not LO_RANK:
-        summary(net, input_size=(1, 3, 32, 32), device=DEV)
+    print_banner(net)
     opt = SGD(net.parameters(), LR, SGD_MOM)
     sched = CosineAnnealingLR(opt, T_max=T_MAX)
     max_te_acc = 0

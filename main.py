@@ -8,6 +8,7 @@ from mlstuff import (
 )
 from mlstuff.networks import QCFS, load_net
 from pathlib import Path
+
 from torch import no_grad
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -15,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchinfo import summary
 import torch
 
-N_CLS = 100
+#N_CLS = 100
 DATA_PATH = Path("/tmp/data")
 LOG_PATH = Path("/tmp/logs")
 LR = 0.1
@@ -32,21 +33,24 @@ def write_thetas(writer, net, epoch):
             kvs[name] = m.theta
     writer.add_scalars('thetas', kvs, epoch)
 
-def train(net_name, batch_size: int, weight_decay: float):
+def train(net_name, ds_name, batch_size: int, weight_decay: float):
     '''Trains a network
 
     :param net_name: Name of network to train
+    :param ds_name: Name of dataset to use
     :param batch_size: Batch size
     '''
     dev = 'cpu'
-    net = load_net(net_name, N_CLS).to(dev)
-    summary(net)
+    n_cls = 10 if ds_name == "cifar10" else 100
+    net = load_net(net_name, n_cls).to(dev)
+    net.n_time_steps = 0
+    summary(net, input_size = (1, 3, 32, 32), device = dev)
 
     dir_name = 'runs_%s_%03d_%.4f' % (net_name, batch_size, weight_decay)
     out_dir = LOG_PATH / dir_name
     writer = SummaryWriter(out_dir)
 
-    l_tr, l_te, names = load_cifar(DATA_PATH, batch_size, N_CLS, dev)
+    l_tr, l_te, names = load_cifar(DATA_PATH, batch_size, n_cls, dev)
     opt = SGD(net.parameters(), LR, SGD_MOM, weight_decay = weight_decay)
     sched = CosineAnnealingLR(opt, T_max=T_MAX)
     max_te_acc = 0
@@ -68,7 +72,7 @@ def train(net_name, batch_size: int, weight_decay: float):
         fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, (best %5.3f)"
         print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
 
-        if net_name == 'vgg16qcfs':
+        if net_name.endswith('qcfs'):
             write_thetas(writer, net, i)
         writer.add_scalars('acc', {'train' : tr_acc, 'test' : te_acc}, i)
         writer.add_scalars('loss', {'train' : tr_loss, 'test' : te_loss}, i)
@@ -79,16 +83,17 @@ def train(net_name, batch_size: int, weight_decay: float):
         writer.flush()
         sched.step()
 
-def test(net_name, batch_size: int, weights_file, *, time: int = None):
+def test(net_name, ds_name, batch_size: int, weights_file, *, time: int = None):
     '''Tests a network
 
-    :param net_name: Name of network to train
+    :param net_name: Name of network to test
+    :param ds_name: Name of dataset to use
     :param batch_size: Batch size
     :param weights_file: Path to weights file
-    :param time: Number of simulation time steps (for vgg16qcfs)
+    :param time: Number of simulation time steps (for qcfs networks)
     '''
     dev = 'cpu'
-    net = load_net(net_name, N_CLS).to(dev)
+    net = load_net(net_name, n_cls).to(dev)
     d = torch.load(weights_file, weights_only = True, map_location = 'cpu')
     if net_name.endswith('qcfs'):
         d = rename_bu2023(net_name, d)
@@ -97,7 +102,7 @@ def test(net_name, batch_size: int, weights_file, *, time: int = None):
     else:
         net.load_state_dict(d)
 
-    _, l_te, names = load_cifar(DATA_PATH, batch_size, N_CLS, dev)
+    _, l_te, names = load_cifar(DATA_PATH, batch_size, n_cls, dev)
     net.eval()
     with no_grad():
         te_loss, te_acc = propagate_epoch(
