@@ -47,14 +47,14 @@ def write_epoch_stats(
     fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, (best %5.3f)"
     print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
 
-    # write_thetas(writer, net, epoch)
-    # writer.add_scalars('acc', {'train' : tr_acc, 'test' : te_acc}, epoch)
-    # writer.add_scalars('loss', {'train' : tr_loss, 'test' : te_loss}, epoch)
-    # writer.add_scalar('lr', sched.get_last_lr()[0], epoch)
-    # for label, loader in [('training', l_tr), ('testing', l_te)]:
-    #     fig = loader_sample_figure(loader, names, net)
-    #     writer.add_figure(label, fig, epoch)
-    # writer.flush()
+    write_thetas(writer, net, epoch)
+    writer.add_scalars('acc', {'train' : tr_acc, 'test' : te_acc}, epoch)
+    writer.add_scalars('loss', {'train' : tr_loss, 'test' : te_loss}, epoch)
+    writer.add_scalar('lr', sched.get_last_lr()[0], epoch)
+    for label, loader in [('training', l_tr), ('testing', l_te)]:
+        fig = loader_sample_figure(loader, names, net)
+        writer.add_figure(label, fig, epoch)
+    writer.flush()
 
 
 @click.group(
@@ -100,7 +100,6 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
     n_cls = 10 if dataset == "cifar10" else 100
     net = load_net(network, n_cls).to(dev)
     if is_distributed(dev):
-        print("Distributed model...")
         init_process_group(backend="nccl")
         torch.cuda.set_device(dev)
         net = DistributedDataParallel(
@@ -198,19 +197,21 @@ def train(
         )
         if is_distributed(dev):
             torch.cuda.synchronize()
+            barrier()
         if is_primary(dev):
-            net.eval()
+            # Use local net here
+            lnet = net.module
+            lnet.eval()
             with torch.no_grad():
                 te_loss, te_acc = propagate_epoch(
-                    dev, net, opt, l_te, i, n_epochs, print_interval
+                    dev, lnet, opt, l_te, i, n_epochs, print_interval
                 )
             if te_acc > max_te_acc:
-                print("Best yet, saving...")
-                torch.save(net.state_dict(), out_dir / 'net.pth')
+                torch.save(lnet.state_dict(), out_dir / 'net.pth')
 
             max_te_acc = max(max_te_acc, te_acc)
             write_epoch_stats(
-                net, sched, writer, i, names,
+                lnet, sched, writer, i, names,
                 l_tr, l_te,
                 tr_loss, te_loss, tr_acc, te_acc, max_te_acc
             )
