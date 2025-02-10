@@ -1,7 +1,9 @@
 # Copyright (C) 2024-2025 Björn A. Lindqvist <bjourne@gmail.com>
+from math import floor
 from torch.autograd import Function
 from torch.nn import *
 from torch.nn.init import constant_, kaiming_normal_, normal_
+from torch.nn.functional import relu
 
 import torch
 
@@ -50,6 +52,10 @@ def replace_modules(mod, match_fun, new_fun):
 
 def is_relu(mod):
     return isinstance(mod, ReLU)
+
+########################################################################
+# ResNets
+########################################################################
 
 # No expansion factor yet
 class ResNetBasicBlock(Module):
@@ -142,8 +148,92 @@ class ResNetSmall(Module):
         x = x.view(x.size(0), -1)
         return self.fc(x)
 
-# Build feature extraction layers based on spec
-def make_vgg_layers():
+########################################################################
+# DenseNet
+########################################################################
+GROWTH_RATE = 32
+N_BLOCKS = [6, 12, 24, 16]
+REDUCTION = 0.5
+
+class Bottleneck(Module):
+    def __init__(self, n_in):
+        super(Bottleneck, self).__init__()
+        self.bn1 = BatchNorm2d(n_in)
+        self.conv1 = Conv2d(n_in, 4 * GROWTH_RATE, 1, bias=False)
+        self.bn2 = BatchNorm2d(4 * GROWTH_RATE)
+        self.conv2 = Conv2d(4 * GROWTH_RATE, GROWTH_RATE, 3, padding=1, bias=False)
+
+    def forward(self, x):
+        xp = self.conv1(relu(self.bn1(x)))
+        xp = self.conv2(relu(self.bn2(xp)))
+        return torch.cat([xp, x], 1)
+
+def build_dense_layers(n_chans, n_block):
+    layers = []
+    for i in range(n_block):
+        layers.append(Bottleneck(n_chans))
+        n_chans += GROWTH_RATE
+    return Sequential(*layers)
+
+def build_transition(n_in, n_out):
+    return Sequential(
+        BatchNorm2d(n_in),
+        ReLU(),
+        Conv2d(n_in, n_out, 1, bias=False),
+        AvgPool2d(2)
+    )
+
+class DenseNet(Module):
+    def __init__(self, n_cls):
+        super(DenseNet, self).__init__()
+
+        n_chans = 2 * GROWTH_RATE
+        self.conv1 = Conv2d(3, n_chans, 3, padding=1, bias=False)
+
+        self.dense1 = build_dense_layers(n_chans, N_BLOCKS[0])
+        n_chans += N_BLOCKS[0] * GROWTH_RATE
+        n_chans_out = int(floor(n_chans*REDUCTION))
+        self.trans1 = build_transition(n_chans, n_chans_out)
+        n_chans = n_chans_out
+
+        self.dense2 = build_dense_layers(n_chans, N_BLOCKS[1])
+        n_chans += N_BLOCKS[1] * GROWTH_RATE
+        n_chans_out = int(floor(n_chans*REDUCTION))
+        self.trans2 = build_transition(n_chans, n_chans_out)
+        n_chans = n_chans_out
+
+        self.dense3 = build_dense_layers(n_chans, N_BLOCKS[2])
+        n_chans += N_BLOCKS[2] * GROWTH_RATE
+        n_chans_out = int(floor(n_chans*REDUCTION))
+        self.trans3 = build_transition(n_chans, n_chans_out)
+        n_chans = n_chans_out
+
+        self.dense4 = build_dense_layers(n_chans, N_BLOCKS[3])
+        n_chans += N_BLOCKS[3] * GROWTH_RATE
+
+        self.linear = Sequential(
+            BatchNorm2d(n_chans),
+            ReLU(),
+            AvgPool2d(4),
+            Flatten(),
+            Linear(n_chans, n_cls)
+        )
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.trans1(self.dense1(x))
+        x = self.trans2(self.dense2(x))
+        x = self.trans3(self.dense3(x))
+        x = self.dense4(x)
+        x = self.linear(x)
+        return x
+
+########################################################################
+# VGG16
+########################################################################
+
+# Build the VGG16 layers
+def build_vgg_layers(n_cls):
     VGG16_LAYERS = [
         64, 64, "M",
         128, 128, "M",
@@ -163,21 +253,18 @@ def make_vgg_layers():
             yield MaxPool2d(2)
         else:
             assert False
+    yield Flatten()
+    yield Linear(512, 4096)
+    yield ReLU(inplace = True)
+    yield Linear(4096, 4096)
+    yield ReLU(inplace = True)
+    yield Linear(4096, n_cls)
 
 class VGG16(Module):
     def __init__(self, n_cls):
         super(VGG16, self).__init__()
         assert n_cls <= 100
-        layers = list(make_vgg_layers())
-        self.features = Sequential(*layers)
-        self.classifier = Sequential(
-            Flatten(),
-            Linear(512, 4096),
-            ReLU(inplace = True),
-            Linear(4096, 4096),
-            ReLU(inplace = True),
-            Linear(4096, n_cls),
-        )
+        self.features = Sequential(*build_vgg_layers(n_cls))
         for m in self.modules():
             if isinstance(m, Conv2d):
                 kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
@@ -191,8 +278,7 @@ class VGG16(Module):
                 constant_(m.bias, 0)
 
     def forward(self, x):
-        x = self.features(x)
-        return self.classifier(x)
+        return self.features(x)
 
 class QCFSNetwork(Module):
     def __init__(self, net, theta, l):
@@ -221,7 +307,9 @@ class QCFSNetwork(Module):
         return self.net.forward(x)
 
 def load_net(net_name, n_cls):
-    if net_name == 'vgg16':
+    if net_name == "densenet":
+        return DenseNet(n_cls)
+    elif net_name == 'vgg16':
         return VGG16(n_cls)
     elif net_name == 'resnet18':
         return ResNet([2, 2, 2, 2], n_cls)
