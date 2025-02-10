@@ -1,4 +1,4 @@
-# Copyright (C) 2024-2025 Björn A. Lindqvist
+# Copyright (C) 2024-2025 Björn A. Lindqvist <bjourne@gmail.com>
 #
 # DenseNet from scratch and trained on CIFAR10.
 #
@@ -74,10 +74,10 @@ REDUCTION = 0.5
 
 
 class Bottleneck(Module):
-    def __init__(self, n_chan_in):
+    def __init__(self, n_in):
         super(Bottleneck, self).__init__()
-        self.bn1 = BatchNorm2d(n_chan_in)
-        self.conv1 = Conv2d(n_chan_in, 4 * GROWTH_RATE, 1, bias=False)
+        self.bn1 = BatchNorm2d(n_in)
+        self.conv1 = Conv2d(n_in, 4 * GROWTH_RATE, 1, bias=False)
         self.bn2 = BatchNorm2d(4 * GROWTH_RATE)
         self.conv2 = Conv2d(
             4 * GROWTH_RATE,
@@ -90,13 +90,13 @@ class Bottleneck(Module):
     def forward(self, x):
         xp = self.conv1(relu(self.bn1(x)))
         xp = self.conv2(relu(self.bn2(xp)))
-        return torch.cat([xp,x], 1)
+        return torch.cat([xp, x], 1)
 
-def build_transition(n_chans_in, n_chans_out):
+def build_transition(n_in, n_out):
     return Sequential(
-        BatchNorm2d(n_chans_in),
+        BatchNorm2d(n_in),
         ReLU(),
-        Conv2d(n_chans_in, n_chans_out, 1, bias=False),
+        Conv2d(n_in, n_out, 1, bias=False),
         AvgPool2d(2)
     )
 
