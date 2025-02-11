@@ -6,6 +6,7 @@ from os import environ
 from pickle import load
 from random import seed as rseed
 from re import sub
+from time import time
 from torch.nn.functional import cross_entropy, mse_loss
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -181,7 +182,8 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
     if is_distributed(dev):
         sampler = DistributedSampler(dataset=d_tr)
         shuffle = False
-        num_workers = 8
+        num_workers = 16
+    print("Using %d workers" % num_workers)
     l_tr = DevDataLoader(
         dev, d_tr, batch_size,
         shuffle = shuffle,
@@ -218,6 +220,22 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
 ########################################################################
 # Training
 ########################################################################
+class EpochStats:
+    def __init__(self, n):
+        self.loss = 0
+        self.acc = 0
+        self.n = n
+        self.bef = time()
+
+    def update(self, loss, acc):
+        self.loss += loss
+        self.acc += acc
+
+    def finalize(self):
+        self.loss /= self.n
+        self.acc /= self.n
+        self.dur = time() - self.bef
+
 def forward_batch(net, opt, x, y):
     if net.training:
         opt.zero_grad()
@@ -238,15 +256,14 @@ def propagate_epoch(dev, net, opt, loader, epoch, n_epochs, print_interval):
     tot_loss = 0
     tot_acc = 0
     n = len(loader)
+    stats = EpochStats(n)
     for i, (x, y) in enumerate(islice(loader, n)):
         loss, acc = forward_batch(net, opt, x, y)
         if i % print_interval == 0 and is_primary(dev):
             print("%4d/%4d, loss/acc: %.4f/%.2f" % (i, n, loss, acc))
-        tot_loss += loss
-        tot_acc += acc
-    tot_loss /= n
-    tot_acc /= n
-    return tot_loss, tot_acc
+        stats.update(loss, acc)
+    stats.finalize()
+    return stats
 
 ########################################################################
 # Training

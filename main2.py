@@ -42,15 +42,30 @@ def write_thetas(writer, net, epoch):
 def write_epoch_stats(
     net, sched, writer, epoch, names,
     l_tr, l_te,
-    tr_loss, te_loss, tr_acc, te_acc, max_te_acc
+    tr_stats, te_stats, max_te_acc
 ):
     fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, (best %5.3f)"
-    print(fmt % (tr_loss, te_loss, tr_acc, te_acc, max_te_acc))
+    args = (
+        tr_stats.loss,
+        te_stats.loss,
+        tr_stats.acc,
+        te_stats.acc,
+        max_te_acc
+    )
+    print(fmt % args)
 
+    acc_scalars = {'train' : tr_stats.acc, 'test' : te_stats.acc}
+    loss_scalars = {'train' : tr_stats.loss, 'test' : te_stats.loss}
+    dur_scalars = {"train" : tr_stats.dur, "test" : te_stats.dur}
+    scalar_sets = {
+        "acc" : acc_scalars,
+        "loss" : loss_scalars,
+        "dur" : dur_scalars,
+    }
+    for sname, v in scalar_sets.items():
+        writer.add_scalars(sname, v, epoch)
+    writer.add_scalar("lr", sched.get_last_lr()[0], epoch)
     write_thetas(writer, net, epoch)
-    writer.add_scalars('acc', {'train' : tr_acc, 'test' : te_acc}, epoch)
-    writer.add_scalars('loss', {'train' : tr_loss, 'test' : te_loss}, epoch)
-    writer.add_scalar('lr', sched.get_last_lr()[0], epoch)
     for label, loader in [('training', l_tr), ('testing', l_te)]:
         fig = loader_sample_figure(loader, names, net)
         writer.add_figure(label, fig, epoch)
@@ -103,6 +118,8 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
     # Load network
     n_cls = 10 if dataset == "cifar10" else 100
     net = load_net(network, n_cls).to(dev)
+    if is_primary(dev):
+        summary(net, input_size=(1, 3, 32, 32), device=dev)
     if is_distributed(dev):
         init_process_group(backend="nccl")
         torch.cuda.set_device(dev)
@@ -195,7 +212,7 @@ def train(
         net.train()
         if is_distributed(dev):
             l_tr.sampler.set_epoch(i)
-        tr_loss, tr_acc = propagate_epoch(
+        tr_stats = propagate_epoch(
             dev, net, opt, l_tr, i, n_epochs, print_interval
         )
         if is_distributed(dev):
@@ -206,17 +223,16 @@ def train(
             lnet = net.module if is_distributed(dev) else net
             lnet.eval()
             with torch.no_grad():
-                te_loss, te_acc = propagate_epoch(
+                te_stats = propagate_epoch(
                     dev, lnet, opt, l_te, i, n_epochs, print_interval
                 )
-            if te_acc > max_te_acc:
+            if te_stats.acc > max_te_acc:
                 torch.save(lnet.state_dict(), out_dir / 'net.pth')
-
-            max_te_acc = max(max_te_acc, te_acc)
+            max_te_acc = max(max_te_acc, te_stats.acc)
             write_epoch_stats(
                 lnet, sched, writer, i, names,
                 l_tr, l_te,
-                tr_loss, te_loss, tr_acc, te_acc, max_te_acc
+                tr_stats, te_stats, max_te_acc
             )
         sched.step()
 
@@ -257,10 +273,10 @@ def test(ctx, weights: str, time_steps):
 
     net.eval()
     with torch.no_grad():
-        te_loss, te_acc = propagate_epoch(
+        te_stats = propagate_epoch(
             dev, net, None, l_te, 0, 1, print_interval
         )
-    print("loss %5.3f, acc %5.3f" % (te_loss, te_acc))
+    print("loss %5.3f, acc %5.3f" % (te_stats.loss, te_stats.acc))
 
 if __name__ == "__main__":
     cli()
