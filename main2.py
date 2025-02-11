@@ -56,6 +56,10 @@ def write_epoch_stats(
         writer.add_figure(label, fig, epoch)
     writer.flush()
 
+def log_dir_name(net_name, bs, wd, lr):
+    fmt = "%s_%03d_%.4f_%.2f"
+    return fmt % (net_name, bs, wd, lr)
+
 
 @click.group(
     invoke_without_command = True,
@@ -174,8 +178,7 @@ def train(
     l_tr, l_te, names = obj["data"]
     print_interval = obj["print_interval"]
 
-
-    dir_name = 'runs_%s_%03d_%.4f' % (net_name, batch_size, weight_decay)
+    dir_name = log_dir_name(net_name, batch_size, weight_decay, learning_rate)
     log_path = Path(log_dir)
     log_path.mkdir(parents = True, exist_ok = True)
     out_dir = log_path / dir_name
@@ -199,8 +202,8 @@ def train(
             torch.cuda.synchronize()
             barrier()
         if is_primary(dev):
-            # Use local net here
-            lnet = net.module
+            # Ensure local network is used.
+            lnet = net.module if is_distributed(dev) else net
             lnet.eval()
             with torch.no_grad():
                 te_loss, te_acc = propagate_epoch(
