@@ -54,6 +54,69 @@ def is_relu(mod):
     return isinstance(mod, ReLU)
 
 ########################################################################
+# EfficientNet
+########################################################################
+base = [
+    # expand, n_chans, repeats, stride, k_size
+    [1, 16, 1, 1, 3],
+    [6, 24, 2, 2, 3],
+    [6, 40, 2, 2, 5],
+    [6, 80, 3, 2, 3],
+    [6, 112, 3, 1, 5],
+    [6, 192, 3, 1, 5],
+    [6, 192, 4, 2, 5],
+    [6, 320, 1, 1, 3]
+]
+
+phis = {
+    "b0" : (0, 224, 0.2),
+    "b1" : (0.5, 240, 0.2),
+    "b2" : (1, 260, 0.3),
+    "b3" : (2, 300, 0.3),
+    "b4" : (3, 380, 0.4),
+    "b5" : (4, 456, 0.4),
+    "b6" : (5, 528, 0.5),
+    "b7" : (6, 600, 0.5)
+}
+
+class CNNBlock(Module):
+    def __init__(self, n_in, n_out, k_size, stride, padding, groups = 1):
+        super(CNNBlock, self).__init__()
+        self.cnn = Conv2d(
+            n_in, n_out, k_size,
+            stride, padding,
+            groups = groups
+        )
+        self.bn = BatchNorm2d(n_out)
+        self.silu = SiLU()
+
+    def forward(self, x):
+        x = self.cnn(x)
+        x = self.bn(x)
+        x = self.silu(x)
+        return x
+
+# Attention scores for each of the channels
+class SqueezeExcitation(Module):
+    def __init__(self, n_in, reduced_dim):
+        super(SqueezeExcitation, self).__init__()
+        self.se = Sequential(
+            AdaptiveAvgPool2d(1),
+            Conv2d(n_in, reduced_dim, 1),
+            SiLU(),
+            Conv2d(reduced_dim, n_in, 1),
+            Sigmoid()
+        )
+
+class InvertedResidualBlock(Module):
+    pass
+
+class EfficientNet(Module):
+    pass
+
+
+
+########################################################################
 # ResNets
 ########################################################################
 
