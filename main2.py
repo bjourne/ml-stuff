@@ -21,6 +21,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchinfo import summary
 
 import click
+import platform
 import torch
 
 __version__ = "0.0.1"
@@ -73,6 +74,7 @@ def write_epoch_stats(
 
 def log_dir_name(ds_name, net_name, bs, wd, lr):
     fmts = [
+        ("%s", platform.node()),
         ("%s", ds_name),
         ("%s", net_name),
         ("%03d", bs),
