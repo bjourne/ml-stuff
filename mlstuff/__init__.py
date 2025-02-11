@@ -177,21 +177,23 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
 
     sampler = None
     shuffle = True
+    num_workers = 0
     if is_distributed(dev):
         sampler = DistributedSampler(dataset=d_tr)
         shuffle = False
+        num_workers = 8
     l_tr = DevDataLoader(
         dev, d_tr, batch_size,
         shuffle = shuffle,
         sampler = sampler,
         drop_last = True,
-        num_workers = 16
+        num_workers = num_workers
     )
     l_te = DevDataLoader(
         dev, d_te, batch_size,
         shuffle = True,
         drop_last = True,
-        num_workers = 16
+        num_workers = num_workers
     )
     if n_cls == 10:
         names = []
