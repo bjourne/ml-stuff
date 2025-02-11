@@ -196,13 +196,23 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
         num_workers = num_workers
     )
     if n_cls == 10:
-        names = []
+        names = [
+            "airplane",
+            "automobile",
+            "bird",
+            "cat",
+            "deer",
+            "dog",
+            "frog",
+            "horse",
+            "ship",
+            "truck"
+        ]
     else:
         meta = data_dir / 'cifar-100-python' / 'meta'
         with open(meta, 'rb') as f:
             d = load(f)
             names = d['fine_label_names']
-
     return l_tr, l_te, names
 
 ########################################################################
