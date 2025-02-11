@@ -41,6 +41,7 @@ Abbreviations:
 |            | CIFAR10  | DenseNet     | std     | 128   | std |      | 0.0    |     |     | 94.9 | n   |
 |            | CIFAR10  | DenseNet     | std     | 256   | std |      | 0.0    |     |     | 94.6 | n   |
 |            | CIFAR10  | DenseNet     | std     | 512   | std |      | 0.0    |     |     | 93.8 | n   |
+| 2025-02-11 | CIFAR10  | DenseNet     | std     | 256/8 | aa  | 1003 | 0.0    | 0.0 | 443 | 96.4 | y   |
 |            | CIFAR100 | VGG16        | std     | 32    | aa  | 1001 | 0.0    | 0.0 |     | 74.9 | n   |
 |            | CIFAR100 | VGG16        | std     | 64    | aa  | 1001 | 0.0    | 0.5 |     | 69.1 | n   |
 |            | CIFAR100 | VGG16        | std     | 64    | std |      | 0.0    | 0.5 |     | 71.7 | n   |
@@ -48,7 +49,7 @@ Abbreviations:
 | 2025-02-01 | CIFAR100 | VGG16        | std     | 128   | aa  | 1001 | 0.0005 | 0.0 |     | 77.4 | n   |
 |            | CIFAR100 | VGG16        | std     | 256   | aa  |      | 0.0    | 0.5 |     | 74.7 | n   |
 | 2024-10-02 | CIFAR100 | VGG16        | std     | 256   | aa  | 1001 | 0.0005 | 0.0 |     | 77.6 | n   |
-| 2025-02-11 | CIFAR100 | VGG16        | std     | 256/8 | aa  | 1003 | 0.0004 | 0.0 | 600 | 74.3 | y   |
+| 2025-02-11 | CIFAR100 | VGG16        | std     | 256/8 | aa  | 1003 | 0.0004 | 0.0 | 600 | 74.3 | n   |
 |            | CIFAR100 | VGG16        | std     | 256   | std |      | 0.0    | 0.5 |     | 70.7 | n   |
 |            | CIFAR100 | VGG16        | std     | 512   | aa  | 1001 | 0.0    | 0.0 |     | 72.9 | n   |
 | 2025-02-10 | CIFAR100 | VGG16        | std     | 512/8 | aa  | 1001 | 0.0005 | 0.0 |     | 73.4 | n   |
