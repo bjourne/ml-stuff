@@ -42,7 +42,7 @@ Abbreviations:
 |            | CIFAR10  | VGG16        | std     | ?     | std |      | 0.0    | 0.5 |     | 93.6 | n   |
 |            | CIFAR10  | VGG16        | lin-512 | ?     | std |      | 0.0    | 0.5 |     | 92.1 | n   |
 |            | CIFAR10  | VGG16        | no-BN   | ?     | std |      | 0.0    | 0.5 |     | 92.6 | n   |
-| 2025-02-11 | CIFAR100 | DenseNet     | std     | 256/8 | aa  | 1007 | 0.0    | 0.0 | 415 | 78.4 | y   |
+| 2025-02-11 | CIFAR100 | DenseNet     | std     | 256/8 | aa  | 1007 | 0.0    | 0.0 | 415 | 78.4 | n   |
 |            | CIFAR100 | VGG16        | std     | 32    | aa  | 1001 | 0.0    | 0.0 |     | 74.9 | n   |
 |            | CIFAR100 | VGG16        | std     | 64    | aa  | 1001 | 0.0    | 0.5 |     | 69.1 | n   |
 |            | CIFAR100 | VGG16        | std     | 64    | std |      | 0.0    | 0.5 |     | 71.7 | n   |
@@ -56,6 +56,8 @@ Abbreviations:
 | 2025-02-10 | CIFAR100 | VGG16        | std     | 512/8 | aa  | 1001 | 0.0005 | 0.0 |     | 73.4 | n   |
 |            | CIFAR100 | VGG16QCFS    | std     | 128   | aa  | 1001 | 0.0    | 0.0 |     | 53.9 | n   |
 |            | CIFAR100 | VGG16QCFS    | std     | 256   | aa  | 1001 | 0.0    | 0.5 |     | 72.0 | n   |
+| 2025-02-11 | CIFAR100 | ResNet18     | std     | 512/8 | aa  | 1003 | 0.0005 | 0.0 | 555 | 77.3 | n   |
+| 2025-02-11 | CIFAR100 | ResNet18     | std     | 256/8 | aa  | 1004 | 0.0    | 0.0 | 731 | 76.7 | y   |
 |            | CIFAR100 | ResNet18     | std     | 256   | aa  |      | 0.0    |     |     | 59.1 | n   |
 |            | CIFAR100 | ResNet50     | std     | 256   | aa  |      | 0.0    |     |     | 47.8 | n   |
 |            | CIFAR100 | ResNet20     | std     | 256   | aa  | 1001 | 0.0    |     |     | 67.2 | n   |
