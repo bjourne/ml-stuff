@@ -158,14 +158,22 @@ REDUCTION = 0.5
 class Bottleneck(Module):
     def __init__(self, n_in):
         super(Bottleneck, self).__init__()
-        self.bn1 = BatchNorm2d(n_in)
-        self.conv1 = Conv2d(n_in, 4 * GROWTH_RATE, 1, bias=False)
-        self.bn2 = BatchNorm2d(4 * GROWTH_RATE)
-        self.conv2 = Conv2d(4 * GROWTH_RATE, GROWTH_RATE, 3, padding=1, bias=False)
+        self.seq = Sequential(
+            BatchNorm2d(n_in),
+            ReLU(inplace = True),
+            # 1x1 convolution
+            Conv2d(n_in, 4 * GROWTH_RATE, 1, bias=False),
+            BatchNorm2d(4 * GROWTH_RATE),
+            ReLU(inplace = True),
+            Conv2d(
+                4 * GROWTH_RATE, GROWTH_RATE, 3,
+                padding=1, bias=False
+            )
+        )
+
 
     def forward(self, x):
-        xp = self.conv1(relu(self.bn1(x)))
-        xp = self.conv2(relu(self.bn2(xp)))
+        xp = self.seq(x)
         return torch.cat([xp, x], 1)
 
 def build_dense_layers(n_chans, n_block):
