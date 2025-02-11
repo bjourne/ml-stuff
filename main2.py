@@ -71,9 +71,15 @@ def write_epoch_stats(
         writer.add_figure(label, fig, epoch)
     writer.flush()
 
-def log_dir_name(net_name, bs, wd, lr):
-    fmt = "%s_%03d_%.4f_%.2f"
-    return fmt % (net_name, bs, wd, lr)
+def log_dir_name(ds_name, net_name, bs, wd, lr):
+    fmts = [
+        ("%s", ds_name),
+        ("%s", net_name),
+        ("%03d", bs),
+        ("%.4f", wd),
+        ("%.2f", lr)
+    ]
+    return "_".join(f % v for (f, v) in fmts)
 
 
 @click.group(
@@ -134,6 +140,7 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
     data_path.mkdir(parents = True, exist_ok = True)
     data = load_cifar(data_path, batch_size, n_cls, dev)
     ctx.obj = dict(
+        ds_name = dataset,
         net_name = network,
         net = net,
         is_distributed = is_distributed,
@@ -189,13 +196,16 @@ def train(
 ):
     obj = ctx.obj
     net_name = obj["net_name"]
+    ds_name = obj["ds_name"]
     net = obj["net"]
     dev = obj["dev"]
     batch_size = obj["batch_size"]
     l_tr, l_te, names = obj["data"]
     print_interval = obj["print_interval"]
 
-    dir_name = log_dir_name(net_name, batch_size, weight_decay, learning_rate)
+    dir_name = log_dir_name(
+        ds_name, net_name, batch_size, weight_decay, learning_rate
+    )
     log_path = Path(log_dir)
     log_path.mkdir(parents = True, exist_ok = True)
     out_dir = log_path / dir_name

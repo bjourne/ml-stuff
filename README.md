@@ -35,13 +35,14 @@ Abbreviations:
 
 | DATE       | DATASET  | MODEL        | VER     | BS    | AUG | SEED | WD     | DO  | N   | ACC  | PRG |
 |------------|----------|--------------|---------|-------|-----|------|--------|-----|-----|------|-----|
-|            | CIFAR10  | VGG16        | std     | ?     | std |      | 0.0    | 0.5 |     | 93.6 | n   |
-|            | CIFAR10  | VGG16        | lin-512 | ?     | std |      | 0.0    | 0.5 |     | 92.1 | n   |
-|            | CIFAR10  | VGG16        | no-BN   | ?     | std |      | 0.0    | 0.5 |     | 92.6 | n   |
 |            | CIFAR10  | DenseNet     | std     | 128   | std |      | 0.0    |     |     | 94.9 | n   |
 |            | CIFAR10  | DenseNet     | std     | 256   | std |      | 0.0    |     |     | 94.6 | n   |
 |            | CIFAR10  | DenseNet     | std     | 512   | std |      | 0.0    |     |     | 93.8 | n   |
-| 2025-02-11 | CIFAR10  | DenseNet     | std     | 256/8 | aa  | 1003 | 0.0    | 0.0 | 443 | 96.4 | y   |
+| 2025-02-11 | CIFAR10  | DenseNet     | std     | 256/8 | aa  | 1003 | 0.0    | 0.0 | 443 | 96.4 | n   |
+|            | CIFAR10  | VGG16        | std     | ?     | std |      | 0.0    | 0.5 |     | 93.6 | n   |
+|            | CIFAR10  | VGG16        | lin-512 | ?     | std |      | 0.0    | 0.5 |     | 92.1 | n   |
+|            | CIFAR10  | VGG16        | no-BN   | ?     | std |      | 0.0    | 0.5 |     | 92.6 | n   |
+| 2025-02-11 | CIFAR100 | DenseNet     | std     | 256/8 | aa  | 1007 | 0.0    | 0.0 | 415 | 78.4 | y   |
 |            | CIFAR100 | VGG16        | std     | 32    | aa  | 1001 | 0.0    | 0.0 |     | 74.9 | n   |
 |            | CIFAR100 | VGG16        | std     | 64    | aa  | 1001 | 0.0    | 0.5 |     | 69.1 | n   |
 |            | CIFAR100 | VGG16        | std     | 64    | std |      | 0.0    | 0.5 |     | 71.7 | n   |
