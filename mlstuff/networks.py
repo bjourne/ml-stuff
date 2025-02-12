@@ -1,8 +1,8 @@
 # Copyright (C) 2024-2025 Björn A. Lindqvist <bjourne@gmail.com>
-from math import floor
+from math import ceil, floor, sqrt
 from torch.autograd import Function
 from torch.nn import *
-from torch.nn.init import constant_, kaiming_normal_, normal_
+from torch.nn.init import constant_, kaiming_normal_, normal_, uniform_
 from torch.nn.functional import relu
 
 import torch
@@ -56,63 +56,182 @@ def is_relu(mod):
 ########################################################################
 # EfficientNet
 ########################################################################
-base = [
+EFF_BASE = [
     # expand, n_chans, repeats, stride, k_size
     [1, 16, 1, 1, 3],
     [6, 24, 2, 2, 3],
     [6, 40, 2, 2, 5],
     [6, 80, 3, 2, 3],
     [6, 112, 3, 1, 5],
-    [6, 192, 3, 1, 5],
     [6, 192, 4, 2, 5],
     [6, 320, 1, 1, 3]
 ]
 
-phis = {
-    "b0" : (0, 224, 0.2),
+PHI_VALUES = {
+    "b0" : (0.0, 224, 0.2),
     "b1" : (0.5, 240, 0.2),
-    "b2" : (1, 260, 0.3),
-    "b3" : (2, 300, 0.3),
-    "b4" : (3, 380, 0.4),
-    "b5" : (4, 456, 0.4),
-    "b6" : (5, 528, 0.5),
-    "b7" : (6, 600, 0.5)
+    "b2" : (1.0, 260, 0.3),
+    "b3" : (2.0, 300, 0.3),
+    "b4" : (3.0, 380, 0.4),
+    "b5" : (4.0, 456, 0.4),
+    "b6" : (5.0, 528, 0.5),
+    "b7" : (6.0, 600, 0.5)
 }
 
 class CNNBlock(Module):
     def __init__(self, n_in, n_out, k_size, stride, padding, groups = 1):
-        super(CNNBlock, self).__init__()
-        self.cnn = Conv2d(
+        super().__init__()
+        self.conv = Conv2d(
             n_in, n_out, k_size,
             stride, padding,
-            groups = groups
+            groups = groups,
+            bias = False
         )
         self.bn = BatchNorm2d(n_out)
         self.silu = SiLU()
 
     def forward(self, x):
-        x = self.cnn(x)
+        x = self.conv(x)
         x = self.bn(x)
         x = self.silu(x)
         return x
 
+SE_RATIO = 0.25
+
 # Attention scores for each of the channels
 class SqueezeExcitation(Module):
-    def __init__(self, n_in, reduced_dim):
+    def __init__(self, n_in):
         super(SqueezeExcitation, self).__init__()
+        n_reduced = int(n_in * SE_RATIO)
         self.se = Sequential(
             AdaptiveAvgPool2d(1),
-            Conv2d(n_in, reduced_dim, 1),
+            Conv2d(n_in, n_reduced, 1),
             SiLU(),
-            Conv2d(reduced_dim, n_in, 1),
+            Conv2d(n_reduced, n_in, 1),
             Sigmoid()
         )
 
+    def forward(self, x):
+        # How can this be element-wise?
+        return x * self.se(x)
+
 class InvertedResidualBlock(Module):
-    pass
+    def __init__(
+        self, n_in, n_out, k_size, stride, exp_ratio,
+        survival_p = 0.8
+    ):
+        super(InvertedResidualBlock, self).__init__()
+        # Check this
+        self.survival_p = survival_p
+        n_hidden = n_in * exp_ratio
+        self.use_residual = n_in == n_out and stride == 1
+
+        self.expand_conv = None
+        if exp_ratio != 1:
+            self.expand_conv = CNNBlock(
+                n_in, n_hidden,
+                k_size=1, stride=1, padding=0
+            )
+        # Depthwise conv
+        self.conv = Sequential(
+            CNNBlock(
+                n_hidden,
+                n_hidden,
+                k_size,
+                stride,
+                # Use same padding
+                k_size // 2,
+                groups = n_hidden
+            ),
+            SqueezeExcitation(n_hidden),
+            Conv2d(n_hidden, n_out, 1, bias = False),
+            BatchNorm2d(n_out)
+        )
+
+    def stochastic_depth(self, x):
+        if not self.training:
+            return x
+
+        # Weird dropout with scaling
+        bin_tensor = torch.rand(x.shape[0], 1, 1, 1, device = x.device)
+        bin_tensor = bin_tensor < self.survival_p
+        return torch.div(x, self.survival_p) * bin_tensor
+
+    def forward(self, x):
+        xp = self.expand_conv(x) if self.expand_conv else x
+        xp = self.conv(xp)
+        if self.use_residual:
+            return self.stochastic_depth(xp) + x
+        return xp
+
+
 
 class EfficientNet(Module):
-    pass
+    def __init__(self, version, n_classes):
+        super().__init__()
+
+        # Width, depth, and dropout
+        phi, _, dropout = PHI_VALUES[version]
+        depth_factor = 1.2**phi
+        width_factor = 1.1**phi
+        last_channels = ceil(1280 * width_factor)
+        self.pool = AdaptiveAvgPool2d(1)
+        self.features = self.create_features(
+            width_factor,
+            depth_factor,
+            last_channels
+        )
+        self.classifier = Sequential(
+            Dropout(dropout),
+            Linear(last_channels, n_classes)
+        )
+
+        # Comes from torchvision
+        for m in self.modules():
+            if isinstance(m, Conv2d):
+                kaiming_normal_(m.weight, mode="fan_out")
+                if m.bias is not None:
+                    constant_(m.bias, 0)
+            elif isinstance(m, (BatchNorm2d, GroupNorm)):
+                constant_(m.weight, 1)
+                constant_(m.bias, 0)
+            elif isinstance(m, Linear):
+                init_range = 1.0 / sqrt(m.out_features)
+                uniform_(m.weight, -init_range, init_range)
+                constant_(m.bias, 0)
+
+
+
+    def create_features(self, width_factor, depth_factor, last_channels):
+        channels = int(32 * width_factor)
+        features = [CNNBlock(3, channels, 3, stride = 2, padding = 1)]
+        n_in = channels
+        for exp_ratio, channels, n_reps, stride, k_size in EFF_BASE:
+            n_out = 4 * ceil(int(channels * width_factor) / 4)
+            layers_n_reps = ceil(n_reps * depth_factor)
+            for layer in range(layers_n_reps):
+                features.append(
+                    InvertedResidualBlock(
+                        n_in, n_out,
+                        stride = stride if layer == 0 else 1,
+                        exp_ratio = exp_ratio,
+                        k_size = k_size
+                    )
+                )
+                n_in = n_out
+        features.append(
+            CNNBlock(n_in, last_channels, k_size = 1, stride = 1, padding = 0)
+        )
+        return Sequential(*features)
+
+    def forward(self, x):
+        x = self.pool(self.features(x))
+        return self.classifier(x.view(x.shape[0], -1))
+
+
+
+
+
 
 
 
@@ -411,3 +530,22 @@ def load_net(net_name, n_cls):
         net = ResNet([3, 4, 6, 3], n_cls)
         return QCFSNetwork(net, 8.0, 8)
     assert False
+
+if __name__ == "__main__":
+    from torchinfo import summary
+    from torchvision.models import EfficientNet as TVEfficientNet
+    from torchvision.models.efficientnet import _efficientnet_conf
+    ver = "b0"
+    _, res, dropout = PHI_VALUES[ver]
+    x = torch.randn((10, 3, res, res))
+    net = EfficientNet(ver, 10)
+    inv_res_setting, last_channel = \
+        _efficientnet_conf("efficientnet_b0", width_mult=1.0, depth_mult=1.0)
+    print(inv_res_setting)
+    net2 = TVEfficientNet(
+        num_classes = 10,
+        dropout = 0.2,
+        inverted_residual_setting = inv_res_setting
+    )
+    summary(net, input_size = x.shape, device = "cpu")
+    summary(net2, input_size = x.shape, device = "cpu")

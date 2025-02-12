@@ -72,11 +72,13 @@ def write_epoch_stats(
         writer.add_figure(label, fig, epoch)
     writer.flush()
 
-def log_dir_name(ds_name, net_name, bs, wd, lr):
+def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, lr):
     fmts = [
         ("%s", platform.node()),
         ("%s", ds_name),
         ("%s", net_name),
+        ("%04d", seed),
+        ("%04d", n_epochs),
         ("%03d", bs),
         ("%.4f", wd),
         ("%.2f", lr)
@@ -142,14 +144,15 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
     data_path.mkdir(parents = True, exist_ok = True)
     data = load_cifar(data_path, batch_size, n_cls, dev)
     ctx.obj = dict(
-        ds_name = dataset,
-        net_name = network,
-        net = net,
-        is_distributed = is_distributed,
-        dev = dev,
-        data = data,
         batch_size = batch_size,
-        print_interval = print_interval
+        data = data,
+        dev = dev,
+        ds_name = dataset,
+        is_distributed = is_distributed,
+        net = net,
+        net_name = network,
+        print_interval = print_interval,
+        seed = seed
     )
 
 @cli.command(
@@ -179,12 +182,12 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
 )
 @click.option(
     "--t-max",
-    default = 600,
+    default = 800,
     help = "T max"
 )
 @click.option(
     "--n-epochs",
-    default = 600,
+    default = 800,
     help = "Number of epochs"
 )
 @click.pass_context
@@ -204,9 +207,11 @@ def train(
     batch_size = obj["batch_size"]
     l_tr, l_te, names = obj["data"]
     print_interval = obj["print_interval"]
+    seed = obj["seed"]
 
     dir_name = log_dir_name(
-        ds_name, net_name, batch_size, weight_decay, learning_rate
+        ds_name, net_name,
+        seed, n_epochs, batch_size, weight_decay, learning_rate
     )
     log_path = Path(log_dir)
     log_path.mkdir(parents = True, exist_ok = True)
