@@ -66,6 +66,7 @@ EFF_BASE = [
     [6, 192, 4, 2, 5],
     [6, 320, 1, 1, 3]
 ]
+EFF_SD_PROB = 0.2
 
 PHI_VALUES = {
     "b0" : (0.0, 224, 0.2),
@@ -120,11 +121,11 @@ class InvertedResidualBlock(Module):
         self, n_in, n_out, k_size, stride, exp_ratio,
         survival_p = 0.8
     ):
-        super(InvertedResidualBlock, self).__init__()
+        super().__init__()
         # Check this
         self.survival_p = survival_p
-        n_hidden = n_in * exp_ratio
         self.use_residual = n_in == n_out and stride == 1
+        n_hidden = n_in * exp_ratio
 
         self.expand_conv = None
         if exp_ratio != 1:
@@ -163,6 +164,36 @@ class InvertedResidualBlock(Module):
         if self.use_residual:
             return self.stochastic_depth(xp) + x
         return xp
+
+class MBConv(Module):
+    def __init__(self, n_in, k_size, stride, sd_prob, exp_ratio):
+        super().__init__()
+
+        n_hidden = ceil(n_in * exp_ratio / 8) * 8
+        print(n_in, n_hidden)
+        layers = []
+        self.expand_conv = None
+        if n_in != n_hidden:
+            layers.append(
+                CNNBlock(
+                    n_in, n_hidden,
+                    k_size = 1, stride = 1, padding = 0
+                )
+            )
+
+        # Depthwise conv
+        layers.append(
+            CNNBlock(
+                n_hidden, n_hidden,
+                k_size = k_size,
+                stride = stride,
+                padding = k_size // 2,
+                groups = n_hidden
+            )
+        )
+
+
+
 
 
 
@@ -206,6 +237,19 @@ class EfficientNet(Module):
         channels = int(32 * width_factor)
         features = [CNNBlock(3, channels, 3, stride = 2, padding = 1)]
         n_in = channels
+
+        n_tot_blocks = sum(n_reps for (_, _, n_reps, _, _) in EFF_BASE)
+        at_block = 0
+        for exp_ratio, channels, n_reps, stride, k_size in EFF_BASE:
+            layers_for_stage = ceil(n_reps * depth_factor)
+            stage = []
+            for _ in range(layers_for_stage):
+                if stage:
+                    pass
+                sd_prob = EFF_SD_PROB * at_block / n_tot_blocks
+                stage.append(MBConv(n_in, k_size, stride, sd_prob, exp_ratio))
+                at_block += 1
+
         for exp_ratio, channels, n_reps, stride, k_size in EFF_BASE:
             n_out = 4 * ceil(int(channels * width_factor) / 4)
             layers_n_reps = ceil(n_reps * depth_factor)
@@ -533,6 +577,7 @@ def load_net(net_name, n_cls):
 
 if __name__ == "__main__":
     from torchinfo import summary
+    from torchvision.models import efficientnet_b0
     from torchvision.models import EfficientNet as TVEfficientNet
     from torchvision.models.efficientnet import _efficientnet_conf
     ver = "b0"
@@ -541,11 +586,14 @@ if __name__ == "__main__":
     net = EfficientNet(ver, 10)
     inv_res_setting, last_channel = \
         _efficientnet_conf("efficientnet_b0", width_mult=1.0, depth_mult=1.0)
-    print(inv_res_setting)
+
+    net3 = efficientnet_b0(num_classes = 10)
+
     net2 = TVEfficientNet(
         num_classes = 10,
         dropout = 0.2,
         inverted_residual_setting = inv_res_setting
     )
-    summary(net, input_size = x.shape, device = "cpu")
+    # summary(net, input_size = x.shape, device = "cpu")
     summary(net2, input_size = x.shape, device = "cpu")
+    #summary(net3, input_size = x.shape, device = "cpu")
