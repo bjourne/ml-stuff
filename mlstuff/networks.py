@@ -532,6 +532,8 @@ class QCFSNetwork(Module):
 def load_net(net_name, n_cls):
     if net_name == "densenet":
         return DenseNet(n_cls)
+    elif net_name == "efficientnet-b0":
+        return EfficientNet("b0", n_cls)
     elif net_name == 'vgg16':
         return VGG16(n_cls)
     elif net_name == 'resnet18':
