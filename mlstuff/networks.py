@@ -4,6 +4,7 @@ from torch.autograd import Function
 from torch.nn import *
 from torch.nn.init import constant_, kaiming_normal_, normal_, uniform_
 from torch.nn.functional import relu
+from torchvision.transforms import Resize
 
 import torch
 
@@ -185,24 +186,49 @@ class MBConv(Module):
             xp = self.stochastic_depth(xp) + x
         return xp
 
+def make_effnet_layers(width_mult, depth_mult, n_last, bn_args):
+    n_in = round_align(32 * width_mult, 8)
+    yield Resize((224, 224), antialias = True)
+    yield Conv2dBNAct(3, n_in, 3, 2, 1, 1, bn_args)
+
+    mbconvs_per_stage = [ceil(n_reps * depth_mult)
+                         for (_, _, n_reps, _, _) in EFF_BASE]
+    n_tot_mbconvs = sum(mbconvs_per_stage)
+    at = 0
+    for n_mbconvs, stage_data in zip(mbconvs_per_stage, EFF_BASE):
+        exp_ratio, n_chans, _, stride, k_size = stage_data
+        n_out = round_align(n_chans * width_mult, 8)
+        for i in range(n_mbconvs):
+            kill_p = EFF_SD_PROB * at / n_tot_mbconvs
+            yield MBConv(
+                n_in, n_out,
+                k_size,
+                stride if i == 0 else 1,
+                kill_p,
+                exp_ratio,
+                bn_args
+            )
+            at += 1
+            n_in = n_out
+    yield Conv2dBNAct(n_in, n_last, 1, 1, 0, 1, bn_args)
+
+
 class EfficientNet(Module):
     def __init__(self, ver, n_classes):
         super().__init__()
 
         # Width, depth, and dropout
         dropout, width_mult, depth_mult, bn_args = EFF_CONFIGS[ver]
-        last_channels = ceil(1280 * width_mult)
+        n_last = ceil(1280 * width_mult)
         self.pool = AdaptiveAvgPool2d(1)
-        self.features = self.create_features(
-            width_mult,
-            depth_mult,
-            last_channels,
-            bn_args
+
+        self.features = Sequential(
+            *make_effnet_layers(width_mult, depth_mult, n_last, bn_args)
         )
         self.classifier = Sequential(
             Flatten(),
             Dropout(dropout),
-            Linear(last_channels, n_classes)
+            Linear(n_last, n_classes)
         )
 
         # Comes from torchvision
@@ -218,48 +244,6 @@ class EfficientNet(Module):
                 init_range = 1.0 / sqrt(m.out_features)
                 uniform_(m.weight, -init_range, init_range)
                 constant_(m.bias, 0)
-
-    def create_features(
-        self,
-        width_mult, depth_mult,
-        last_channels,
-        bn_args
-    ):
-
-        n_in = round_align(32 * width_mult, 8)
-        features = [Conv2dBNAct(3, n_in, 3, 2, 1, 1, bn_args)]
-
-        layers_per_stage = [ceil(n_reps * depth_mult)
-                            for (_, _, n_reps, _, _) in EFF_BASE]
-        n_tot_layers = sum(layers_per_stage)
-
-        at_layer = 0
-        for n_layers, (exp_ratio, n_chans, _, stride, k_size) in zip(layers_per_stage, EFF_BASE):
-            n_out = round_align(n_chans * width_mult, 8)
-            stage = []
-            for i in range(n_layers):
-                kill_p = EFF_SD_PROB * at_layer / n_tot_layers
-                mbc = MBConv(
-                    n_in, n_out,
-                    k_size,
-                    stride if i == 0 else 1,
-                    kill_p,
-                    exp_ratio,
-                    bn_args
-                )
-                stage.append(mbc)
-                at_layer += 1
-                n_in = n_out
-            features.append(Sequential(*stage))
-
-        features.append(
-            Conv2dBNAct(
-                n_in, last_channels,
-                1, 1, 0, 1,
-                bn_args
-            )
-        )
-        return Sequential(*features)
 
     def forward(self, x):
         x = self.features(x)
@@ -584,9 +568,13 @@ def sum_attr(net, cls, attr):
     return tot
 
 def tests():
+    from torchinfo import summary
     from torchvision.ops import StochasticDepth
 
-    assert cnt_params(EfficientNet("b0", 10)) == 4020358
+    b0 = EfficientNet("b0", 10)
+    summary(b0, input_size = (10, 3, 32, 32), device = "cpu", depth = 3)
+
+    assert cnt_params(b0) == 4020358
     assert cnt_params(EfficientNet("b1", 10)) == 6525994
     assert cnt_params(EfficientNet("b2", 10)) == 7715084
     assert cnt_params(EfficientNet("b3", 10)) == 10711602
