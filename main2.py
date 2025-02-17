@@ -1,4 +1,6 @@
 # Copyright (C) 2025 Björn A. Lindqvist <bjourne@gmail.com>
+#
+# DenseNet, VGG16, ResNet, etc. trained on CIFAR10/100.
 from mlstuff import (
     get_device,
     is_distributed,
@@ -8,7 +10,7 @@ from mlstuff import (
     propagate_epoch,
     seed_all
 )
-from mlstuff.networks import QCFS, load_net
+from mlstuff.networks import QCFS, QCFSNetwork, load_net
 from os import environ
 from pathlib import Path
 from torch.distributed import (
@@ -79,8 +81,8 @@ def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, lr):
         ("%s", net_name),
         ("%04d", seed),
         ("%04d", n_epochs),
-        ("%03d", bs),
-        ("%.4f", wd),
+        ("%04d", bs),
+        ("%.5f", wd),
         ("%.2f", lr)
     ]
     return "_".join(f % v for (f, v) in fmts)
@@ -128,8 +130,6 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
     # Load network
     n_cls = 10 if dataset == "cifar10" else 100
     net = load_net(network, n_cls).to(dev)
-    if is_primary(dev):
-        summary(net, input_size=(1, 3, 32, 32), device=dev)
     if is_distributed(dev):
         init_process_group(backend="nccl")
         torch.cuda.set_device(dev)
@@ -182,12 +182,12 @@ def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
 )
 @click.option(
     "--t-max",
-    default = 800,
+    default = 1000,
     help = "T max"
 )
 @click.option(
     "--n-epochs",
-    default = 800,
+    default = 1000,
     help = "Number of epochs"
 )
 @click.pass_context
@@ -209,9 +209,13 @@ def train(
     print_interval = obj["print_interval"]
     seed = obj["seed"]
 
+    if isinstance(net, QCFSNetwork):
+        net.set_snn_mode(0)
+
     dir_name = log_dir_name(
         ds_name, net_name,
-        seed, n_epochs, batch_size, weight_decay, learning_rate
+        seed, n_epochs,
+        batch_size, weight_decay, learning_rate
     )
     log_path = Path(log_dir)
     log_path.mkdir(parents = True, exist_ok = True)
