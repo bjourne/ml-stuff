@@ -10,7 +10,7 @@ from mlstuff import (
     propagate_epoch,
     seed_all
 )
-from mlstuff.networks import QCFS, QCFSNetwork, load_net
+from mlstuff.networks import QCFS, load_net
 from os import environ
 from pathlib import Path
 from torch.distributed import (
@@ -83,10 +83,9 @@ def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, lr):
         ("%04d", n_epochs),
         ("%04d", bs),
         ("%.5f", wd),
-        ("%.2f", lr)
+        ("%.3f", lr)
     ]
     return "_".join(f % v for (f, v) in fmts)
-
 
 @click.group(
     invoke_without_command = True,
@@ -122,14 +121,29 @@ def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, lr):
     default = 10,
     help = "Print interval"
 )
-def cli(ctx, seed, network, dataset, batch_size, data_dir, print_interval):
+@click.option(
+    "--time-steps",
+    default = 0,
+    help = "Number of simulation time steps (for qcfs networks)"
+)
+def cli(
+    ctx,
+    seed,
+    network,
+    dataset,
+    batch_size,
+    data_dir,
+    print_interval,
+    time_steps
+):
     dev = get_device()
     print_device(dev)
     seed_all(seed)
 
     # Load network
     n_cls = 10 if dataset == "cifar10" else 100
-    net = load_net(network, n_cls).to(dev)
+    net = load_net(network, n_cls, time_steps)
+    net = net.to(dev)
     if is_distributed(dev):
         init_process_group(backend="nccl")
         torch.cuda.set_device(dev)
@@ -209,9 +223,6 @@ def train(
     print_interval = obj["print_interval"]
     seed = obj["seed"]
 
-    if isinstance(net, QCFSNetwork):
-        net.set_snn_mode(0)
-
     dir_name = log_dir_name(
         ds_name, net_name,
         seed, n_epochs,
@@ -270,28 +281,16 @@ def train(
     "weights",
     type = click.Path(exists = True)
 )
-@click.option(
-    "--time-steps",
-    default = None,
-    help = "Number of simulation time steps (for qcfs networks)"
-)
 @click.pass_context
-def test(ctx, weights: str, time_steps):
+def test(ctx, weights: str):
     obj = ctx.obj
     _, l_te, _ = obj["data"]
     net = obj["net"]
     dev = obj["dev"]
-    net_name = obj["net_name"]
     print_interval = obj["print_interval"]
 
     d = torch.load(weights, weights_only = True)
-    if net_name.endswith('qcfs'):
-        d = rename_bu2023(net_name, d)
-        net.set_snn_mode(time_steps)
-        net.net.load_state_dict(d)
-    else:
-        net.load_state_dict(d)
-
+    net.load_state_dict(d)
     net.eval()
     with torch.no_grad():
         te_stats = propagate_epoch(

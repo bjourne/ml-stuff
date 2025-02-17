@@ -19,11 +19,11 @@ class GradFloor(Function):
         return x
 
 class QCFS(Module):
-    def __init__(self, theta, l):
+    def __init__(self, theta, l, n_time_steps):
         super().__init__()
         self.theta = Parameter(torch.tensor([theta]), requires_grad=True)
         self.l = l
-        self.n_time_steps = 0
+        self.n_time_steps = n_time_steps
 
     def forward_qcfs(self, x):
         x = x / self.theta
@@ -488,21 +488,15 @@ class VGG16(Module):
         return self.features(x)
 
 class QCFSNetwork(Module):
-    def __init__(self, net, theta, l):
+    def __init__(self, net, theta, l, n_time_steps):
         super().__init__()
         replace_modules(
             net,
             lambda m: isinstance(m, ReLU),
-            lambda m: QCFS(theta, l)
+            lambda m: QCFS(theta, l, n_time_steps)
         )
-        self.n_time_steps = None
-        self.net = net
-
-    def set_snn_mode(self, n_time_steps):
         self.n_time_steps = n_time_steps
-        for m in self.net.modules():
-            if isinstance(m, QCFS):
-                m.n_time_steps = n_time_steps
+        self.net = net
 
     def forward(self, x):
         if self.n_time_steps > 0:
@@ -513,7 +507,7 @@ class QCFSNetwork(Module):
             return y.mean(0)
         return self.net.forward(x)
 
-def load_net(net_name, n_cls):
+def load_net(net_name, n_cls, n_time_steps):
     if net_name == "densenet":
         return DenseNet(n_cls)
     elif net_name == "efficientnet-b0":
@@ -538,16 +532,16 @@ def load_net(net_name, n_cls):
             lambda m: isinstance(m, MaxPool2d),
             lambda m: AvgPool2d(2)
         )
-        return QCFSNetwork(net, 8.0, 8)
+        return QCFSNetwork(net, 8.0, 8, n_time_steps)
     elif net_name == 'resnet18qcfs':
-        net = ResNet([2, 2, 2, 2], n_cls)
+        net = ResNet([2, 2, 2, 2], n_cls, n_time_steps)
         return QCFSNetwork(net, 8.0, 8)
     elif net_name == 'resnet20qcfs':
-        net = ResNetSmall([3, 3, 3], n_cls)
+        net = ResNetSmall([3, 3, 3], n_cls, n_time_steps)
         return QCFSNetwork(net, 8.0, 8)
     elif net_name == 'resnet34qcfs':
         net = ResNet([3, 4, 6, 3], n_cls)
-        return QCFSNetwork(net, 8.0, 8)
+        return QCFSNetwork(net, 8.0, 8 , n_time_steps)
     assert False
 
 def cnt_params(net):
