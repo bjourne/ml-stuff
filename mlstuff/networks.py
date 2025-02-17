@@ -269,6 +269,8 @@ class ResNetBasicBlock(Module):
         )
         self.shortcut = Sequential()
         if stride != 1 or n_in != n_out:
+            # Some implementations use a biased conv2d for the
+            # subsampling. It shouldn't matter much.
             self.shortcut = Sequential(
                 Conv2d(n_in, n_out, 1, stride, 0, bias = False),
                 BatchNorm2d(n_out)
@@ -331,8 +333,11 @@ class ResNetSmall(Module):
         self.layer2 = Sequential(*make_resnet_layer(layers[1], 16, 32, 2))
         self.layer3 = Sequential(*make_resnet_layer(layers[2], 32, 64, 2))
 
-        self.ap = AdaptiveAvgPool2d((1, 1))
-        self.fc = Linear(64, n_cls)
+        self.classifier = Sequential(
+            AdaptiveAvgPool2d((1, 1)),
+            Flatten(),
+            Linear(64, n_cls)
+        )
 
     def forward(self, x):
         x = self.conv1(x)
@@ -343,9 +348,7 @@ class ResNetSmall(Module):
         x = self.layer2(x)
         x = self.layer3(x)
 
-        x = self.ap(x)
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
+        return self.classifier(x)
 
 ########################################################################
 # DenseNet 121
@@ -566,7 +569,6 @@ def tests():
     from torchvision.ops import StochasticDepth
 
     b0 = EfficientNet("b0", 10)
-    summary(b0, input_size = (10, 3, 32, 32), device = "cpu", depth = 3)
 
     assert cnt_params(b0) == 4020358
     assert cnt_params(EfficientNet("b1", 10)) == 6525994
@@ -581,6 +583,9 @@ def tests():
     assert round(sum_attr(b7, BatchNorm2d, "eps"), 3) == 0.163
     assert sum_attr(b7, Conv2d, "kernel_size") == 890
     assert round(sum_attr(b7, MBConv, "kill_p"), 2) == 5.4
+
+    rn = ResNetSmall([3, 3, 3], 100)
+    assert cnt_params(rn) == 278324
 
 
 if __name__ == "__main__":
