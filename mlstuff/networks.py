@@ -270,7 +270,8 @@ class ResNetBasicBlock(Module):
         self.shortcut = Sequential()
         if stride != 1 or n_in != n_out:
             # Some implementations use a biased conv2d for the
-            # subsampling. It shouldn't matter much.
+            # subsampling instead of batch norm. It shouldn't matter
+            # much.
             self.shortcut = Sequential(
                 Conv2d(n_in, n_out, 1, stride, 0, bias = False),
                 BatchNorm2d(n_out)
@@ -280,75 +281,35 @@ class ResNetBasicBlock(Module):
     def forward(self, x):
         return self.relu(self.residual(x) + self.shortcut(x))
 
-def make_resnet_layer(n_blocks, n_in, n_out, stride):
-    strides = [stride] + [1] * (n_blocks - 1)
-    for stride in strides:
-        yield ResNetBasicBlock(n_in, n_out, stride)
-        n_in = n_out
+def make_resnet_blocks(layers, n_in, n_cls):
+    for n_blocks, n_out, stride in layers:
+        strides = [stride] + [1] * (n_blocks - 1)
+        for stride in strides:
+            yield ResNetBasicBlock(n_in, n_out, stride)
+            n_in = n_out
+
+    yield AdaptiveAvgPool2d((1, 1))
+    yield Flatten()
+    yield Linear(n_in, n_cls)
 
 class ResNet(Module):
-    def __init__(self, layers, n_cls):
+    def __init__(self, layers, n_in, n_cls):
         super().__init__()
 
         # Prelude matches Bu2023's version.
-        self.conv1 = Conv2d(3, 64, 3, 1, 1, bias = False)
-        self.bn1 = BatchNorm2d(64)
+        self.conv1 = Conv2d(3, n_in, 3, 1, 1, bias = False)
+        self.bn1 = BatchNorm2d(n_in)
         self.relu = ReLU(inplace = True)
 
         # Layers
-        self.layer1 = Sequential(*make_resnet_layer(layers[0], 64, 64, 1))
-        self.layer2 = Sequential(*make_resnet_layer(layers[1], 64, 128, 2))
-        self.layer3 = Sequential(*make_resnet_layer(layers[2], 128, 256, 2))
-        self.layer4 = Sequential(*make_resnet_layer(layers[3], 256, 512, 2))
-
-        # Classifier
-        self.ap = AdaptiveAvgPool2d((1, 1))
-        self.fc = Linear(512, n_cls)
+        self.blocks = Sequential(*make_resnet_blocks(layers, n_in, n_cls))
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-
-        x = self.ap(x)
-        x = x.view(x.size(0), -1)
-        return self.fc(x)
-
-class ResNetSmall(Module):
-    def __init__(self, layers, n_cls):
-        super().__init__()
-
-        # Prelude matches Bu2023's version.
-        self.conv1 = Conv2d(3, 16, 3, 1, 1, bias = False)
-        self.bn1 = BatchNorm2d(16)
-        self.relu = ReLU(inplace = True)
-
-        # Layers
-        self.layer1 = Sequential(*make_resnet_layer(layers[0], 16, 16, 1))
-        self.layer2 = Sequential(*make_resnet_layer(layers[1], 16, 32, 2))
-        self.layer3 = Sequential(*make_resnet_layer(layers[2], 32, 64, 2))
-
-        self.classifier = Sequential(
-            AdaptiveAvgPool2d((1, 1)),
-            Flatten(),
-            Linear(64, n_cls)
-        )
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-
-        return self.classifier(x)
+        return self.blocks(x)
 
 ########################################################################
 # DenseNet 121
@@ -518,7 +479,13 @@ def load_net(net_name, n_cls, n_time_steps):
     elif net_name == 'vgg16':
         return VGG16(n_cls)
     elif net_name == 'resnet18':
-        return ResNet([2, 2, 2, 2], n_cls)
+        return ResNet(
+            [(2, 64, 1), (2, 128, 2), (2, 256, 2), (2, 512, 2)],
+            64,
+            n_cls
+        )
+    elif net_name == 'resnet20':
+        return ResNet([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
     elif net_name == 'vgg16qcfs':
         net = VGG16(n_cls)
         replace_modules(
@@ -537,11 +504,11 @@ def load_net(net_name, n_cls, n_time_steps):
         )
         return QCFSNetwork(net, 8.0, 8, n_time_steps)
     elif net_name == 'resnet18qcfs':
-        net = ResNet([2, 2, 2, 2], n_cls, n_time_steps)
-        return QCFSNetwork(net, 8.0, 8)
+        net = ResNet([2, 2, 2, 2], n_cls)
+        return QCFSNetwork(net, 8.0, 8, n_time_steps)
     elif net_name == 'resnet20qcfs':
-        net = ResNetSmall([3, 3, 3], n_cls, n_time_steps)
-        return QCFSNetwork(net, 8.0, 8)
+        net = ResNetSmall([3, 3, 3], n_cls)
+        return QCFSNetwork(net, 8.0, 8, n_time_steps)
     elif net_name == 'resnet34qcfs':
         net = ResNet([3, 4, 6, 3], n_cls)
         return QCFSNetwork(net, 8.0, 8 , n_time_steps)
@@ -584,26 +551,15 @@ def tests():
     assert sum_attr(b7, Conv2d, "kernel_size") == 890
     assert round(sum_attr(b7, MBConv, "kill_p"), 2) == 5.4
 
-    rn = ResNetSmall([3, 3, 3], 100)
-    assert cnt_params(rn) == 278324
+    net = load_net("resnet20", 100, 0)
+    assert cnt_params(net) == 278324
+
+    net = load_net("resnet18", 100, 0)
+    assert cnt_params(net) == 11220132
 
 
 if __name__ == "__main__":
     tests()
-
-    # from torchinfo import summary
-    # from torchvision.models._utils import _make_divisible
-    # from torchvision.models.efficientnet import (
-    #     efficientnet_b0,
-    #     efficientnet_b1,
-    #     efficientnet_b2,
-    #     efficientnet_b3,
-    #     efficientnet_b4,
-    #     efficientnet_b5,
-    #     efficientnet_b6,
-    #     efficientnet_b7,
-    #     _efficientnet_conf
-    # )
     # from torchvision.ops import StochasticDepth
     # inv_res, _ = _efficientnet_conf("efficientnet_b3", width_mult=1.2, depth_mult=1.4)
     # for x in inv_res:
