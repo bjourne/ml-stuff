@@ -256,10 +256,43 @@ class EfficientNet(Module):
 # ResNets
 ########################################################################
 
-# No expansion factor yet
-class ResNetBasicBlock(Module):
+# Pre-activated resnet block. Follows implementation:
+#
+# https://github.com/kuangliu/pytorch-cifar/blob/master/models/preact_resnet.py
+class ResNetPABlock(Module):
     def __init__(self, n_in, n_out, stride):
         super().__init__()
+
+        self.preact = Sequential(
+            BatchNorm2d(n_in),
+            ReLU(inplace = True),
+        )
+        self.shortcut = Sequential()
+        if stride != 1 or n_in != n_out:
+            # Unclear whether there should be bias/batch norm in the
+            # shortcut or not.
+            self.shortcut = Sequential(
+                Conv2d(n_in, n_out, 1, stride, bias = False),
+                BatchNorm2d(n_out)
+            )
+        self.residual = Sequential(
+            Conv2d(n_in, n_out, 3, stride, 1, bias = False),
+            BatchNorm2d(n_out),
+            ReLU(inplace = True),
+            Conv2d(n_out, n_out, 3, 1, 1, bias = False)
+        )
+
+    def forward(self, x):
+        xp = self.preact(x)
+        return self.residual(xp) + self.shortcut(xp)
+
+
+# No expansion factor yet
+class ResNetBlock(Module):
+    def __init__(self, n_in, n_out, stride):
+        super().__init__()
+
+        # Downsampling in the first convolution
         self.residual = Sequential(
             Conv2d(n_in, n_out, 3, stride, 1, bias = False),
             BatchNorm2d(n_out),
@@ -270,7 +303,7 @@ class ResNetBasicBlock(Module):
         self.shortcut = Sequential()
         if stride != 1 or n_in != n_out:
             # Some implementations use a biased conv2d for the
-            # subsampling instead of batch norm. It shouldn't matter
+            # downsampling instead of batch norm. It shouldn't matter
             # much.
             self.shortcut = Sequential(
                 Conv2d(n_in, n_out, 1, stride, 0, bias = False),
@@ -281,12 +314,19 @@ class ResNetBasicBlock(Module):
     def forward(self, x):
         return self.relu(self.residual(x) + self.shortcut(x))
 
-def make_resnet_blocks(layers, n_in, n_cls):
+def make_resnet_blocks(is_pa, layers, n_in, n_cls):
+    block_cls = ResNetPABlock if is_pa else ResNetBlock
     for n_blocks, n_out, stride in layers:
         strides = [stride] + [1] * (n_blocks - 1)
         for stride in strides:
-            yield ResNetBasicBlock(n_in, n_out, stride)
+            yield block_cls(n_in, n_out, stride)
             n_in = n_out
+
+    # The pre-activated resnet blocks does not finish with batch
+    # norm/relu, so we need it here (I think).
+    if is_pa:
+        yield BatchNorm2d(n_in)
+        yield ReLU(inplace = True)
 
     yield AdaptiveAvgPool2d((1, 1))
     yield Flatten()
@@ -302,7 +342,9 @@ class ResNet(Module):
         self.relu = ReLU(inplace = True)
 
         # Layers
-        self.blocks = Sequential(*make_resnet_blocks(layers, n_in, n_cls))
+        self.blocks = Sequential(
+            *make_resnet_blocks(False, layers, n_in, n_cls)
+        )
 
     def forward(self, x):
         x = self.conv1(x)
@@ -310,6 +352,22 @@ class ResNet(Module):
         x = self.relu(x)
 
         return self.blocks(x)
+
+class ResNetPA(Module):
+    def __init__(self, layers, n_in, n_cls):
+        super().__init__()
+        self.conv1 = Conv2d(3, n_in, 3, 1, 1, bias = False)
+
+        # Since it is preact, we don't need conv or bn before the
+        # blocks.
+        self.blocks = Sequential(
+            *make_resnet_blocks(True, layers, n_in, n_cls)
+        )
+
+    def forward(self, x):
+        x = self.conv1(x)
+        return self.blocks(x)
+
 
 ########################################################################
 # DenseNet 121
@@ -486,8 +544,12 @@ def load_net(net_name, n_cls, n_time_steps):
         )
     elif net_name == 'resnet20':
         return ResNet([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
+    elif net_name == "resnet20-pa":
+        return ResNetPA([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
     elif net_name == 'vgg16qcfs':
         net = VGG16(n_cls)
+
+        # Shouldn't the batch norms be removed??
         replace_modules(
             net,
             lambda m: isinstance(m, Conv2d),
@@ -554,9 +616,11 @@ def tests():
     net = load_net("resnet20", 100, 0)
     assert cnt_params(net) == 278324
 
+    net = load_net("resnet20-pa", 100, 0)
+    assert cnt_params(net) == 278324
+
     net = load_net("resnet18", 100, 0)
     assert cnt_params(net) == 11220132
-
 
 if __name__ == "__main__":
     tests()
