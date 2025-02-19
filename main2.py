@@ -74,7 +74,7 @@ def write_epoch_stats(
         writer.add_figure(label, fig, epoch)
     writer.flush()
 
-def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, lr):
+def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, tm, lr):
     fmts = [
         ("%s", platform.node()),
         ("%s", ds_name),
@@ -83,6 +83,7 @@ def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, lr):
         ("%04d", n_epochs),
         ("%04d", bs),
         ("%.5f", wd),
+        ("%04d", tm),
         ("%.3f", lr)
     ]
     return "_".join(f % v for (f, v) in fmts)
@@ -226,7 +227,8 @@ def train(
     dir_name = log_dir_name(
         ds_name, net_name,
         seed, n_epochs,
-        batch_size, weight_decay, learning_rate
+        batch_size, weight_decay,
+        t_max, learning_rate
     )
     log_path = Path(log_dir)
     log_path.mkdir(parents = True, exist_ok = True)

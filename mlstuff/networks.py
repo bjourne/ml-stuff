@@ -55,6 +55,48 @@ def is_relu(mod):
     return isinstance(mod, ReLU)
 
 ########################################################################
+# AlexNet
+########################################################################
+class AlexNet(Module):
+    def __init__(self, n_cls):
+        super().__init__()
+        self.features = Sequential(
+            # Ensure input is big enough
+            Resize((227, 227), antialias = True),
+            Conv2d(3, 64, 11, 4, 2),
+            ReLU(inplace = True),
+            MaxPool2d(3, 2),
+            Conv2d(64, 192, 5, 1, 2),
+            ReLU(inplace = True),
+            MaxPool2d(3, 2),
+            Conv2d(192, 384, 3, 1, 1),
+            ReLU(inplace = True),
+            Conv2d(384, 256, 3, 1, 1),
+            ReLU(inplace = True),
+            Conv2d(256, 256, 3, 1, 1),
+            ReLU(inplace = True),
+            MaxPool2d(3, 2)
+        )
+        self.classifier = Sequential(
+            AdaptiveAvgPool2d(6),
+            Flatten(),
+            Linear(256 * 6 * 6, 4096),
+            ReLU(inplace = True),
+            Dropout(0.5),
+            Linear(4096, 4096),
+            ReLU(inplace = True),
+            Dropout(0.5),
+            Linear(4096, n_cls)
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        return self.classifier(x)
+
+
+
+
+########################################################################
 # EfficientNet
 ########################################################################
 EFF_BASE = [
@@ -491,7 +533,7 @@ def build_vgg_layers(n_cls):
 
 class VGG16(Module):
     def __init__(self, n_cls):
-        super(VGG16, self).__init__()
+        super().__init__()
         assert n_cls <= 100
         self.features = Sequential(*build_vgg_layers(n_cls))
         for m in self.modules():
@@ -530,25 +572,35 @@ class QCFSNetwork(Module):
         return self.net.forward(x)
 
 def load_net(net_name, n_cls, n_time_steps):
-    if net_name == "densenet":
+    if net_name == "alexnet":
+        return AlexNet(n_cls)
+    elif net_name == "densenet":
         return DenseNet(n_cls)
     elif net_name == "efficientnet-b0":
         return EfficientNet("b0", n_cls)
-    elif net_name == 'vgg16':
-        return VGG16(n_cls)
     elif net_name == 'resnet18':
         return ResNet(
             [(2, 64, 1), (2, 128, 2), (2, 256, 2), (2, 512, 2)],
             64,
             n_cls
         )
+    elif net_name == 'resnet18qcfs':
+        net = ResNet([2, 2, 2, 2], n_cls)
+        return QCFSNetwork(net, 8.0, 8, n_time_steps)
     elif net_name == 'resnet20':
         return ResNet([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
     elif net_name == "resnet20-pa":
         return ResNetPA([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
+    elif net_name == 'resnet20qcfs':
+        net = ResNetSmall([3, 3, 3], n_cls)
+        return QCFSNetwork(net, 8.0, 8, n_time_steps)
+    elif net_name == 'resnet34qcfs':
+        net = ResNet([3, 4, 6, 3], n_cls)
+        return QCFSNetwork(net, 8.0, 8 , n_time_steps)
+    elif net_name == 'vgg16':
+        return VGG16(n_cls)
     elif net_name == 'vgg16qcfs':
         net = VGG16(n_cls)
-
         # Shouldn't the batch norms be removed??
         replace_modules(
             net,
@@ -565,15 +617,6 @@ def load_net(net_name, n_cls, n_time_steps):
             lambda m: AvgPool2d(2)
         )
         return QCFSNetwork(net, 8.0, 8, n_time_steps)
-    elif net_name == 'resnet18qcfs':
-        net = ResNet([2, 2, 2, 2], n_cls)
-        return QCFSNetwork(net, 8.0, 8, n_time_steps)
-    elif net_name == 'resnet20qcfs':
-        net = ResNetSmall([3, 3, 3], n_cls)
-        return QCFSNetwork(net, 8.0, 8, n_time_steps)
-    elif net_name == 'resnet34qcfs':
-        net = ResNet([3, 4, 6, 3], n_cls)
-        return QCFSNetwork(net, 8.0, 8 , n_time_steps)
     assert False
 
 def cnt_params(net):
@@ -623,27 +666,7 @@ def tests():
     assert cnt_params(net) == 11220132
 
 if __name__ == "__main__":
-    tests()
-    # from torchvision.ops import StochasticDepth
-    # inv_res, _ = _efficientnet_conf("efficientnet_b3", width_mult=1.2, depth_mult=1.4)
-    # for x in inv_res:
-    #     print(x.input_channels, x.out_channels, x.kernel)
-    # ver = "b7"
-    # res = EFF_CONFIGS[ver][0]
-    # res = 32
-    # x = torch.randn((10, 3, res, res))
     #tests()
-    # n_cls = 10
-    # net = EfficientNet(ver, n_cls)
-    # net2 = efficientnet_b7(num_classes = n_cls)
-    # tot = 0
-    # for m in net2.modules():
-    #     if isinstance(m, StochasticDepth):
-    #         #tot += m.p
-    #         print("prob", m.p, m.mode)
-    # print(tot)
-    # depth = 3
-    # summary(net, input_size = x.shape, device = "cpu", depth = 3)
-    # summary(net2, input_size = x.shape, device = "cpu", depth = 3)
-    # summary(net2, input_size = x.shape, device = "cpu", depth = depth)
-    # #summary(net3, input_size = x.shape, device = "cpu")
+    from torchinfo import summary
+    net = AlexNet(1000)
+    summary(net, input_size = (1, 3, 32, 32), device = "cpu")
