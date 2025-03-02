@@ -8,7 +8,8 @@ from mlstuff import (
     load_cifar,
     loader_sample_figure,
     propagate_epoch,
-    seed_all
+    seed_all,
+    synchronize
 )
 from mlstuff.networks import QCFS, load_net
 from os import environ
@@ -249,9 +250,7 @@ def train(
         tr_stats = propagate_epoch(
             dev, net, opt, l_tr, i, n_epochs, print_interval
         )
-        if is_distributed(dev):
-            torch.cuda.synchronize()
-            barrier()
+        synchronize(dev)
         if is_primary(dev):
             # Ensure local network is used.
             lnet = net.module if is_distributed(dev) else net
@@ -271,8 +270,7 @@ def train(
         sched.step()
 
     if is_distributed(dev):
-        torch.cuda.synchronize()
-        barrier()
+        synchronize(dev)
         destroy_process_group()
 
 @cli.command(

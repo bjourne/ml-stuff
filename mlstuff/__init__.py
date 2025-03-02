@@ -170,11 +170,21 @@ def is_primary(dev):
 def is_distributed(dev):
     return type(dev) == int
 
+def synchronize(dev):
+    if is_distributed(dev):
+        torch.cuda.synchronize()
+        barrier()
+
 def load_cifar(data_dir, batch_size, n_cls, dev):
     t_tr, t_te = transforms_aa()
     cls = CIFAR10 if n_cls == 10 else CIFAR100
-    d_tr = cls(data_dir, True, t_tr, download = True)
-    d_te = cls(data_dir, False, t_te, download = True)
+
+    if is_primary(dev):
+        cls(data_dir, True, t_tr, download = True)
+        cls(data_dir, False, t_te, download = True)
+    synchronize(dev)
+    d_tr = cls(data_dir, True, t_tr, download = False)
+    d_te = cls(data_dir, False, t_te, download = False)
 
     sampler = None
     shuffle = True
