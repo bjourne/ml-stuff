@@ -8,6 +8,7 @@ from mlstuff import (
     load_cifar,
     loader_sample_figure,
     propagate_epoch,
+    rename_bu2023,
     seed_all,
     synchronize
 )
@@ -15,7 +16,7 @@ from mlstuff.networks import QCFS, load_net
 from os import environ
 from pathlib import Path
 from torch.distributed import (
-    barrier, destroy_process_group, init_process_group
+    destroy_process_group, init_process_group
 )
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim import SGD
@@ -145,6 +146,7 @@ def cli(
     # Load network
     n_cls = 10 if dataset == "cifar10" else 100
     net = load_net(network, n_cls, time_steps)
+
     net = net.to(dev)
     if is_distributed(dev):
         init_process_group(backend="nccl")
@@ -260,7 +262,8 @@ def train(
                     dev, lnet, opt, l_te, i, n_epochs, print_interval
                 )
             if te_stats.acc > max_te_acc:
-                torch.save(lnet.state_dict(), out_dir / 'net.pth')
+                state = lnet.state_dict()
+                torch.save(state, out_dir / 'net.pth')
             max_te_acc = max(max_te_acc, te_stats.acc)
             write_epoch_stats(
                 lnet, sched, writer, i, names,
@@ -281,16 +284,27 @@ def train(
     "weights",
     type = click.Path(exists = True)
 )
+@click.option(
+    "--rename",
+    default = False,
+    is_flag = True,
+    help = "Rename loaded layers"
+)
 @click.pass_context
-def test(ctx, weights: str):
+def test(ctx, weights: str, rename):
     obj = ctx.obj
     _, l_te, _ = obj["data"]
     net = obj["net"]
+    net_name = obj["net_name"]
     dev = obj["dev"]
     print_interval = obj["print_interval"]
 
-    d = torch.load(weights, weights_only = True)
-    net.load_state_dict(d)
+    d = torch.load(weights, weights_only = True, map_location = dev)
+    if rename:
+        d = rename_bu2023(net_name, d)
+        net.net.load_state_dict(d)
+    else:
+        net.load_state_dict(d)
     net.eval()
     with torch.no_grad():
         te_stats = propagate_epoch(

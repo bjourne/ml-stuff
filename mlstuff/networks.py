@@ -531,11 +531,9 @@ def build_vgg_layers(n_cls):
     yield ReLU(inplace = True)
     yield Linear(4096, n_cls)
 
-class VGG16(Module):
+class VGG16(Sequential):
     def __init__(self, n_cls):
-        super().__init__()
-        assert n_cls <= 100
-        self.features = Sequential(*build_vgg_layers(n_cls))
+        super().__init__(*build_vgg_layers(n_cls))
         for m in self.modules():
             if isinstance(m, Conv2d):
                 kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
@@ -547,9 +545,6 @@ class VGG16(Module):
             elif isinstance(m, Linear):
                 normal_(m.weight, 0, 0.01)
                 constant_(m.bias, 0)
-
-    def forward(self, x):
-        return self.features(x)
 
 class QCFSNetwork(Module):
     def __init__(self, net, theta, l, n_time_steps):
@@ -668,5 +663,18 @@ def tests():
 if __name__ == "__main__":
     #tests()
     from torchinfo import summary
+    from calflops import calculate_flops
+
     net = AlexNet(1000)
-    summary(net, input_size = (1, 3, 32, 32), device = "cpu")
+    shape = 1, 3, 227, 227
+    summary(net, input_size = shape, device = "cpu")
+
+
+
+    flops, macs, params = calculate_flops(
+        model=net,
+        input_shape=shape,
+        output_as_string=True,
+        output_precision=4
+    )
+    print("Alexnet FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))

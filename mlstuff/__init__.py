@@ -7,6 +7,7 @@ from pickle import load
 from random import seed as rseed
 from re import sub
 from time import time
+from torch.distributed import barrier
 from torch.nn.functional import cross_entropy, mse_loss
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -35,16 +36,7 @@ def seed_all(seed):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-BU2023_STARTS = {
-    'vgg16qcfs' : [
-        ('classifier.2', 'classifier.2'),
-        ('classifier.5', 'classifier.4'),
-        ('classifier.4', 'classifier.3'),
-        ('classifier.7', 'classifier.5')
-    ]
-}
-
-def vgg16_repl(m):
+def vgg16_layer_repl(m):
     old_idx = int(m.group(1)), int(m.group(2))
     d = {
         (1, 0) : 0, (1, 1) : 1, (1, 2) : 2, (1, 4) : 3, (1, 5) : 4,
@@ -60,12 +52,22 @@ def vgg16_repl(m):
     }
     new_idx = d[old_idx]
     rem = m.group(3)
-    return 'features.%d.%s' % (new_idx, rem)
+    return '%d.%s' % (new_idx, rem)
 
+def vgg16_classifier_repl(m):
+    d = {1 : 45, 2 : 46, 4 : 47, 5 : 48, 7 : 49}
+    old_idx = int(m.group(1))
+    rem = m.group(2)
+    new_idx = d[old_idx]
+    return "%d.%s" % (new_idx, rem)
+
+
+# Order is important
 BU2023_REGEXP_REPLS = {
     'vgg16qcfs' : [
-        (r'^layer(\d)\.(\d+)\.([^\.]+)$', vgg16_repl),
-        (r'^([^\.]+)\.(\d+)\.thresh$', r'\g<1>.\g<2>.theta')
+        (r'^layer(\d)\.(\d+)\.([^\.]+)$', vgg16_layer_repl),
+        (r"^classifier\.(\d)\.([^\.]+)$", vgg16_classifier_repl),
+        (r'^(.*)\.thresh$', r'\g<1>.theta')
     ],
     'resnet34qcfs' : [
         (r'^conv2_x\.(.*)$', r'layer1.\g<1>'),
@@ -89,7 +91,6 @@ BU2023_REGEXP_REPLS = {
          r'\g<1>.theta'),
     ]
 }
-
 BU2023_REGEXP_REPLS['resnet18qcfs'] = BU2023_REGEXP_REPLS['resnet34qcfs']
 BU2023_REGEXP_REPLS['resnet20qcfs'] = BU2023_REGEXP_REPLS['resnet34qcfs']
 
@@ -100,16 +101,7 @@ def rename_bu2023(net_name, d):
         for pattern, repl in repls:
             k = sub(pattern, repl, k)
         d2[k] = v
-    starts = BU2023_STARTS.get(net_name, [])
-    d3 = {}
-    for k, v in d2.items():
-        k2 = k
-        for src, dst in starts:
-            if k.startswith(src):
-                k2 = dst + k[len(src):]
-                break
-        d3[k2] = v
-    return d3
+    return d2
 
 ########################################################################
 # Data processing
