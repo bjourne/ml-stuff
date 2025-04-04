@@ -180,12 +180,11 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
 
     sampler = None
     shuffle = True
-    num_workers = 0
+    num_workers = 8
     if is_distributed(dev):
         sampler = DistributedSampler(dataset=d_tr)
         shuffle = False
         num_workers = 16
-    print("Using %d workers" % num_workers)
     l_tr = DevDataLoader(
         dev, d_tr, batch_size,
         shuffle = shuffle,

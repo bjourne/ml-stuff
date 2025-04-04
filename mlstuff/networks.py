@@ -19,11 +19,12 @@ class GradFloor(Function):
         return x
 
 class QCFS(Module):
-    def __init__(self, theta, l, n_time_steps):
+    def __init__(self, theta, l, n_time_steps, spike_prop):
         super().__init__()
         self.theta = Parameter(torch.tensor([theta]), requires_grad=True)
         self.l = l
         self.n_time_steps = n_time_steps
+        self.spike_prop = spike_prop
 
     def forward_qcfs(self, x):
         x = x / self.theta
@@ -31,7 +32,23 @@ class QCFS(Module):
         x = GradFloor.apply(x * self.l + 0.5) / self.l
         return x * self.theta
 
-    def forward_if(self, x):
+    def forward_if_lbl(self, x):
+        y_shape = [self.n_time_steps, x.shape[0] // self.n_time_steps]
+        y_shape += x.shape[1:]
+        x = x.view(y_shape)
+        theta = self.theta.data
+
+        mem = 0.5 * theta
+        y = torch.empty(y_shape)
+        for t in range(self.n_time_steps):
+            mem = mem + x[t, ...]
+            spike = (mem - theta >= 0).float() * theta
+            mem -= spike
+            y[t] = spike
+        y = y.flatten(0, 1).contiguous()
+        return y
+
+    def forward_if_tbt(self, x):
         theta = self.theta.data
         if self.mem is None:
             self.mem = torch.zeros_like(x) + theta * 0.5
@@ -42,7 +59,9 @@ class QCFS(Module):
 
     def forward(self, x):
         if self.n_time_steps > 0:
-            return self.forward_if(x)
+            if self.spike_prop == "lbl":
+                return self.forward_if_lbl(x)
+            return self.forward_if_tbt(x)
         return self.forward_qcfs(x)
 
 def replace_modules(mod, match_fun, new_fun):
@@ -57,43 +76,34 @@ def is_relu(mod):
 ########################################################################
 # AlexNet
 ########################################################################
-class AlexNet(Module):
-    def __init__(self, n_cls):
-        super().__init__()
-        self.features = Sequential(
-            # Ensure input is big enough
-            Resize((227, 227), antialias = True),
-            Conv2d(3, 64, 11, 4, 2),
-            ReLU(inplace = True),
-            MaxPool2d(3, 2),
-            Conv2d(64, 192, 5, 1, 2),
-            ReLU(inplace = True),
-            MaxPool2d(3, 2),
-            Conv2d(192, 384, 3, 1, 1),
-            ReLU(inplace = True),
-            Conv2d(384, 256, 3, 1, 1),
-            ReLU(inplace = True),
-            Conv2d(256, 256, 3, 1, 1),
-            ReLU(inplace = True),
-            MaxPool2d(3, 2)
-        )
-        self.classifier = Sequential(
-            AdaptiveAvgPool2d(6),
-            Flatten(),
-            Linear(256 * 6 * 6, 4096),
-            ReLU(inplace = True),
-            Dropout(0.5),
-            Linear(4096, 4096),
-            ReLU(inplace = True),
-            Dropout(0.5),
-            Linear(4096, n_cls)
-        )
-
-    def forward(self, x):
-        x = self.features(x)
-        return self.classifier(x)
-
-
+def alex_net(n_cls):
+    layers = [
+        # Ensure input is big enough
+        Resize((227, 227), antialias = True),
+        Conv2d(3, 64, 11, 4, 2),
+        ReLU(inplace = True),
+        MaxPool2d(3, 2),
+        Conv2d(64, 192, 5, 1, 2),
+        ReLU(inplace = True),
+        MaxPool2d(3, 2),
+        Conv2d(192, 384, 3, 1, 1),
+        ReLU(inplace = True),
+        Conv2d(384, 256, 3, 1, 1),
+        ReLU(inplace = True),
+        Conv2d(256, 256, 3, 1, 1),
+        ReLU(inplace = True),
+        MaxPool2d(3, 2),
+        AdaptiveAvgPool2d(6),
+        Flatten(),
+        Linear(256 * 6 * 6, 4096),
+        ReLU(inplace = True),
+        Dropout(0.5),
+        Linear(4096, 4096),
+        ReLU(inplace = True),
+        Dropout(0.5),
+        Linear(4096, n_cls)
+    ]
+    return Sequential(*layers)
 
 
 ########################################################################
@@ -505,7 +515,7 @@ class DenseNet(Module):
 
 # Build the VGG16 layers
 def build_vgg_layers(n_cls):
-    VGG16_LAYERS = [
+    vgg16_layers = [
         64, 64, "M",
         128, 128, "M",
         256, 256, 256, "M",
@@ -513,7 +523,7 @@ def build_vgg_layers(n_cls):
         512, 512, 512, "M",
     ]
     n_chans_in = 3
-    for v in VGG16_LAYERS:
+    for v in vgg16_layers:
         if type(v) == int:
             # Batch norm so no bias.
             yield Conv2d(n_chans_in, v, 3, padding=1, bias=False)
@@ -531,44 +541,60 @@ def build_vgg_layers(n_cls):
     yield ReLU(inplace = True)
     yield Linear(4096, n_cls)
 
-class VGG16(Sequential):
-    def __init__(self, n_cls):
-        super().__init__(*build_vgg_layers(n_cls))
-        for m in self.modules():
-            if isinstance(m, Conv2d):
-                kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-                if m.bias is not None:
-                    constant_(m.bias, 0)
-            elif isinstance(m, BatchNorm2d):
-                constant_(m.weight, 1)
+def vgg16(n_cls):
+    net = Sequential(*build_vgg_layers(n_cls))
+    for m in net.modules():
+        if isinstance(m, Conv2d):
+            kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+            if m.bias is not None:
                 constant_(m.bias, 0)
-            elif isinstance(m, Linear):
-                normal_(m.weight, 0, 0.01)
-                constant_(m.bias, 0)
+        elif isinstance(m, BatchNorm2d):
+            constant_(m.weight, 1)
+            constant_(m.bias, 0)
+        elif isinstance(m, Linear):
+            normal_(m.weight, 0, 0.01)
+            constant_(m.bias, 0)
+    return net
 
 class QCFSNetwork(Module):
-    def __init__(self, net, theta, l, n_time_steps):
+    def __init__(self, net, theta, l, n_time_steps, spike_prop):
         super().__init__()
         replace_modules(
             net,
             lambda m: isinstance(m, ReLU),
-            lambda m: QCFS(theta, l, n_time_steps)
+            lambda m: QCFS(theta, l, n_time_steps, spike_prop)
         )
         self.n_time_steps = n_time_steps
         self.net = net
+        self.spike_prop = spike_prop
+
+    def forward_lbl(self, x):
+        bs, *rem = x.shape
+        x = x.unsqueeze(1).repeat(self.n_time_steps, 1, 1, 1, 1)
+        x = x.flatten(0, 1).contiguous()
+
+        x = self.net.forward(x)
+        _, n_cls = x.shape
+        x = x.view((self.n_time_steps, bs, n_cls))
+        return x.mean(0)
+
+    def forward_tbt(self, x):
+        for m in self.net.modules():
+            m.mem = None
+        y = [self.net.forward(x) for _ in range(self.n_time_steps)]
+        y = torch.stack(y)
+        return y.mean(0)
 
     def forward(self, x):
         if self.n_time_steps > 0:
-            for m in self.net.modules():
-                m.mem = None
-            y = [self.net.forward(x) for _ in range(self.n_time_steps)]
-            y = torch.stack(y)
-            return y.mean(0)
+            if self.spike_prop == "lbl":
+                return self.forward_lbl(x)
+            return self.forward_tbt(x)
         return self.net.forward(x)
 
-def load_net(net_name, n_cls, n_time_steps):
+def load_net(net_name, n_cls, n_time_steps, spike_prop):
     if net_name == "alexnet":
-        return AlexNet(n_cls)
+        return alex_net(n_cls)
     elif net_name == "densenet":
         return DenseNet(n_cls)
     elif net_name == "efficientnet-b0":
@@ -593,9 +619,9 @@ def load_net(net_name, n_cls, n_time_steps):
         net = ResNet([3, 4, 6, 3], n_cls)
         return QCFSNetwork(net, 8.0, 8 , n_time_steps)
     elif net_name == 'vgg16':
-        return VGG16(n_cls)
+        return vgg16(n_cls)
     elif net_name == 'vgg16qcfs':
-        net = VGG16(n_cls)
+        net = vgg16(n_cls)
         # Shouldn't the batch norms be removed??
         replace_modules(
             net,
@@ -611,7 +637,7 @@ def load_net(net_name, n_cls, n_time_steps):
             lambda m: isinstance(m, MaxPool2d),
             lambda m: AvgPool2d(2)
         )
-        return QCFSNetwork(net, 8.0, 8, n_time_steps)
+        return QCFSNetwork(net, 8.0, 8, n_time_steps, spike_prop)
     assert False
 
 def cnt_params(net):

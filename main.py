@@ -15,6 +15,8 @@ from mlstuff import (
 from mlstuff.networks import QCFS, load_net
 from os import environ
 from pathlib import Path
+from shutil import get_terminal_size
+from time import time
 from torch.distributed import (
     destroy_process_group, init_process_group
 )
@@ -91,9 +93,11 @@ def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, tm, lr):
     return "_".join(f % v for (f, v) in fmts)
 
 @click.group(
-    invoke_without_command = True,
     no_args_is_help=True,
-    context_settings={'show_default': True}
+    context_settings={
+        'show_default': True,
+        "max_content_width": get_terminal_size().columns
+    }
 )
 @click.pass_context
 @click.version_option(__version__)
@@ -129,6 +133,13 @@ def log_dir_name(ds_name, net_name, seed, n_epochs, bs, wd, tm, lr):
     default = 0,
     help = "Number of simulation time steps (for qcfs networks)"
 )
+@click.option(
+    "--spike-prop",
+    default = "tbt",
+    type = click.Choice(["lbl", "tbt"], case_sensitive = False),
+    help = "Whether to forward spikes layer by layer (lbl)"
+    " or time step by time step (tbt)"
+)
 def cli(
     ctx,
     seed,
@@ -137,7 +148,8 @@ def cli(
     batch_size,
     data_dir,
     print_interval,
-    time_steps
+    time_steps,
+    spike_prop
 ):
     dev = get_device()
     print_device(dev)
@@ -145,7 +157,7 @@ def cli(
 
     # Load network
     n_cls = 10 if dataset == "cifar10" else 100
-    net = load_net(network, n_cls, time_steps)
+    net = load_net(network, n_cls, time_steps, spike_prop)
 
     net = net.to(dev)
     if is_distributed(dev):
@@ -175,13 +187,11 @@ def cli(
 
 @cli.command(
     context_settings={'show_default': True},
-    help="Trains NETWORK using DATASET"
+    help="Trains NETWORK using DATASET and store artifacts in LOG_DIR"
 )
-@click.option(
-    "--log-dir",
-    default = "/tmp/logs",
-    type = click.Path(dir_okay = True),
-    help = "Logging directory"
+@click.argument(
+    "log-dir",
+    type = click.Path(dir_okay = True)
 )
 @click.option(
     "--weight-decay",
@@ -305,12 +315,15 @@ def test(ctx, weights: str, rename):
         net.net.load_state_dict(d)
     else:
         net.load_state_dict(d)
+    bef = time()
     net.eval()
     with torch.no_grad():
         te_stats = propagate_epoch(
             dev, net, None, l_te, 0, 1, print_interval
         )
-    print("loss %5.3f, acc %5.3f" % (te_stats.loss, te_stats.acc))
+    took = time() - bef
+    fmt = "loss %5.3f, acc %5.3f, %5.2f s"
+    print(fmt % (te_stats.loss, te_stats.acc, took))
 
 if __name__ == "__main__":
     cli()
