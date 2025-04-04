@@ -4,18 +4,18 @@ Reimplementations of deep learning models.
 
 # Usage
 
-    $ python main.py train vgg16 128 0.0005
-    ...
-    $ python main.py test vgg16 128 /tmp/logs/runs_vgg16_128_0.0005/net.pth
-    ...
     $ python main.py --help
     ...
-
+    $ python main.py --batch-size 128 vgg16 cifar100 train /tmp/logs
+    ...
+    $ python main.py --batch-size 128 vgg16 cifar100 test /path/to/net.pth
+    ...
+    $ CUDA_VISIBLE_DEVICES=-1 python main.py --batch-size 128 vgg16qcfs cifar100 train /tmp/logs
 
 # Observations
 
-* With dropout 0.5 VGG16 does not converge on CIFAR100 with learning rate 0.1 and batch
-  size 32.
+* With dropout 0.5 VGG16 does not converge on CIFAR100 with learning
+  rate 0.1 and batch size 32.
 
 # Results
 
@@ -36,7 +36,7 @@ Abbreviations:
 
 | DATE       | DATASET  | MODEL        | VER     | BS     | AUG | WD     | DO  | LR   | SEED | N   | ACC  | PRG |
 |------------|----------|--------------|---------|--------|-----|--------|-----|------|------|-----|------|-----|
-| 2025-02-19 | CIFAR10  | AlexNet      | std     | 128/8  | std | 0.0    | 0.0 | 0.1  | 1000 | 976 | 94.3 | y   |
+| 2025-02-19 | CIFAR10  | AlexNet      | std     | 128/8  | std | 0.0    | 0.0 | 0.1  | 1000 | 976 | 94.3 | n   |
 |            | CIFAR10  | DenseNet     | std     | 128    | std | 0.0    |     |      |      |     | 94.9 | n   |
 |            | CIFAR10  | DenseNet     | std     | 256    | std | 0.0    |     |      |      |     | 94.6 | n   |
 |            | CIFAR10  | DenseNet     | std     | 512    | std | 0.0    |     |      |      |     | 93.8 | n   |
@@ -82,6 +82,7 @@ Abbreviations:
 | 2025-02-10 | CIFAR100 | VGG16        | std     | 512/8  | aa  | 0.0005 | 0.0 |      | 1001 |     | 73.4 | n   |
 |            | CIFAR100 | VGG16QCFS    | std     | 128    | aa  | 0.0    | 0.0 |      | 1001 |     | 53.9 | n   |
 |            | CIFAR100 | VGG16QCFS    | std     | 256    | aa  | 0.0    | 0.5 |      | 1001 |     | 72.0 | n   |
+| 2025-03-11 | CIFAR100 | VGG16QCFS    | std     | 256/8  | aa  | 0.0005 | 0.0 | 0.05 | 999  | 984 | 76.1 | n   |
 | 2025-02-17 | CIFAR100 | VGG16QCFS    | std     | 256/8  | aa  | 0.0005 | 0.0 | 0.05 | 1010 | 963 | 76.0 | n   |
 | 2025-02-17 | CIFAR100 | VGG16QCFS    | std     | 256/8  | aa  | 0.0005 | 0.0 | 0.10 | 1010 | 966 | 76.4 | n   |
 | 2025-02-17 | CIFAR100 | VGG16QCFS    | std     | 256/8  | aa  | 0.0005 | 0.0 | 0.20 | 1010 | 703 | 72.6 | n   |
