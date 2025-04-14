@@ -1,0 +1,18 @@
+# Copyright (C) 2025 Björn A. Lindqvist <bjourne@gmail.com>
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mlstuff"
+version = "0.0.1"
+description = "My machine learning stuff"
+
+[project.urls]
+homepage = "https://github.com/bjourne/ml-stuff"
+
+[project.scripts]
+mlstuff-tool = "mlstuff.scripts:main"
+
+[tool.pylint.format]
+max-line-length = 80

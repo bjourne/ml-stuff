@@ -325,5 +325,8 @@ def test(ctx, weights: str, rename):
     fmt = "loss %5.3f, acc %5.3f, %5.2f s"
     print(fmt % (te_stats.loss, te_stats.acc, took))
 
-if __name__ == "__main__":
+def main():
     cli()
+
+if __name__ == "__main__":
+    main()
