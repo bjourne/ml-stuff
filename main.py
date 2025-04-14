@@ -156,7 +156,7 @@ def cli(
     seed_all(seed)
 
     # Load network
-    n_cls = 10 if dataset == "cifar10" else 100
+    n_cls = dict(cifar10 = 10, cifar100 = 100)[dataset]
     net = load_net(network, n_cls, time_steps, spike_prop)
 
     net = net.to(dev)
