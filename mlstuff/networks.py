@@ -576,12 +576,12 @@ class QCFSNetwork(Module):
 
     def forward_lbl(self, x):
         bs, *rem = x.shape
-        x = x.unsqueeze(1).repeat(self.n_time_steps, 1, 1, 1, 1)
-        x = x.flatten(0, 1).contiguous()
 
+        x = x.repeat(self.n_time_steps, *[1] * (x.dim() - 1))
         x = self.net.forward(x)
 
-        # Split first dimension into time steps and batch size
+        # Split first dimension into time steps and batch size then
+        # reduce.
         x = x.reshape((self.n_time_steps, bs) + x.shape[1:])
         return x.mean(0)
 
