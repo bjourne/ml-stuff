@@ -33,7 +33,10 @@ class QCFS(Module):
         return x * self.theta
 
     def forward_if_lbl(self, x):
-        y_shape = [self.n_time_steps, x.shape[0] // self.n_time_steps]
+        prod_bs_ts = x.shape[0]
+        assert prod_bs_ts >= self.n_time_steps
+
+        y_shape = [self.n_time_steps, prod_bs_ts // self.n_time_steps]
         y_shape += x.shape[1:]
         x = x.view(y_shape)
         theta = self.theta.data
@@ -556,14 +559,17 @@ def vgg16(n_cls):
             constant_(m.bias, 0)
     return net
 
+def relu_to_if(net, theta, l, n_time_steps, spike_prop):
+    replace_modules(
+        net,
+        lambda m: isinstance(m, ReLU),
+        lambda m: QCFS(theta, l, n_time_steps, spike_prop)
+    )
+
 class QCFSNetwork(Module):
     def __init__(self, net, theta, l, n_time_steps, spike_prop):
         super().__init__()
-        replace_modules(
-            net,
-            lambda m: isinstance(m, ReLU),
-            lambda m: QCFS(theta, l, n_time_steps, spike_prop)
-        )
+        relu_to_if(net, theta, l, n_time_steps, spike_prop)
         self.n_time_steps = n_time_steps
         self.net = net
         self.spike_prop = spike_prop
@@ -574,8 +580,9 @@ class QCFSNetwork(Module):
         x = x.flatten(0, 1).contiguous()
 
         x = self.net.forward(x)
-        _, n_cls = x.shape
-        x = x.view((self.n_time_steps, bs, n_cls))
+
+        # Split first dimension into time steps and batch size
+        x = x.reshape((self.n_time_steps, bs) + x.shape[1:])
         return x.mean(0)
 
     def forward_tbt(self, x):
@@ -592,7 +599,7 @@ class QCFSNetwork(Module):
             return self.forward_tbt(x)
         return self.net.forward(x)
 
-def load_net(net_name, n_cls, n_time_steps, spike_prop):
+def load_base_net(net_name, n_cls):
     if net_name == "alexnet":
         return alex_net(n_cls)
     elif net_name == "densenet":
@@ -605,40 +612,42 @@ def load_net(net_name, n_cls, n_time_steps, spike_prop):
             64,
             n_cls
         )
-    elif net_name == 'resnet18qcfs':
-        net = ResNet([2, 2, 2, 2], n_cls)
-        return QCFSNetwork(net, 8.0, 8, n_time_steps)
     elif net_name == 'resnet20':
         return ResNet([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
     elif net_name == "resnet20-pa":
         return ResNetPA([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
-    elif net_name == 'resnet20qcfs':
-        net = ResNetSmall([3, 3, 3], n_cls)
-        return QCFSNetwork(net, 8.0, 8, n_time_steps)
-    elif net_name == 'resnet34qcfs':
+    elif net_name == 'resnet34':
+        # Doesnt work yet
         net = ResNet([3, 4, 6, 3], n_cls)
-        return QCFSNetwork(net, 8.0, 8 , n_time_steps)
     elif net_name == 'vgg16':
         return vgg16(n_cls)
-    elif net_name == 'vgg16qcfs':
-        net = vgg16(n_cls)
-        # Shouldn't the batch norms be removed??
-        replace_modules(
-            net,
-            lambda m: isinstance(m, Conv2d),
-            lambda m: Conv2d(
-                m.in_channels, m.out_channels,
-                m.kernel_size, m.stride, m.padding,
-                bias = True
+    else:
+        assert False
+
+def load_net(net_name, n_cls, n_time_steps, spike_prop):
+    base = net_name
+    is_spiking = net_name.endswith("qcfs")
+    if is_spiking:
+        base = base[:-4]
+    net = load_base_net(base, n_cls)
+    if is_spiking:
+        if base == "vgg16":
+            replace_modules(
+                net,
+                lambda m: isinstance(m, Conv2d),
+                lambda m: Conv2d(
+                    m.in_channels, m.out_channels,
+                    m.kernel_size, m.stride, m.padding,
+                    bias = True
+                )
             )
-        )
-        replace_modules(
-            net,
-            lambda m: isinstance(m, MaxPool2d),
-            lambda m: AvgPool2d(2)
-        )
+            replace_modules(
+                net,
+                lambda m: isinstance(m, MaxPool2d),
+                lambda m: AvgPool2d(2)
+            )
         return QCFSNetwork(net, 8.0, 8, n_time_steps, spike_prop)
-    assert False
+    return net
 
 def cnt_params(net):
     import numpy as np
