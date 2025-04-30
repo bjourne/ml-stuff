@@ -315,6 +315,7 @@ def test(ctx, weights: str, rename):
         net.net.load_state_dict(d)
     else:
         net.load_state_dict(d)
+
     bef = time()
     net.eval()
     with torch.no_grad():
