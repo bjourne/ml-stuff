@@ -3,7 +3,6 @@ from math import ceil, floor, sqrt
 from torch.autograd import Function
 from torch.nn import *
 from torch.nn.init import constant_, kaiming_normal_, normal_, uniform_
-from torch.nn.functional import relu
 from torchvision.transforms import Resize
 
 import torch
@@ -454,7 +453,7 @@ class Bottleneck(Module):
 
 def build_dense_layers(n_chans, n_block):
     layers = []
-    for i in range(n_block):
+    for _ in range(n_block):
         layers.append(Bottleneck(n_chans))
         n_chans += GROWTH_RATE
     return Sequential(*layers)
@@ -575,7 +574,7 @@ class QCFSNetwork(Module):
         self.spike_prop = spike_prop
 
     def forward_lbl(self, x):
-        bs, *rem = x.shape
+        bs, *_ = x.shape
 
         x = x.repeat(self.n_time_steps, *[1] * (x.dim() - 1))
         x = self.net.forward(x)
@@ -618,7 +617,7 @@ def load_base_net(net_name, n_cls):
         return ResNetPA([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
     elif net_name == 'resnet34':
         # Doesnt work yet
-        net = ResNet([3, 4, 6, 3], n_cls)
+        _ = ResNet([3, 4, 6, 3], n_cls)
     elif net_name == 'vgg16':
         return vgg16(n_cls)
     else:
@@ -667,9 +666,6 @@ def sum_attr(net, cls, attr):
     return tot
 
 def tests():
-    from torchinfo import summary
-    from torchvision.ops import StochasticDepth
-
     b0 = EfficientNet("b0", 10)
 
     assert cnt_params(b0) == 4020358

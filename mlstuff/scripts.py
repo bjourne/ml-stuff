@@ -3,6 +3,7 @@
 # DenseNet, VGG16, ResNet, etc. trained on CIFAR10/100.
 from mlstuff import (
     get_device,
+    identify_worker,
     is_distributed,
     is_primary,
     load_cifar,
@@ -13,7 +14,6 @@ from mlstuff import (
     synchronize
 )
 from mlstuff.networks import QCFS, load_net
-from os import environ
 from pathlib import Path
 from shutil import get_terminal_size
 from time import time
@@ -24,20 +24,12 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.optim import SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.tensorboard import SummaryWriter
-from torchinfo import summary
 
 import click
 import platform
 import torch
 
 __version__ = "0.0.1"
-
-def print_device(dev):
-    if is_distributed(dev):
-        n_devs = torch.cuda.device_count()
-        print("Process %d of %d" % (dev, n_devs))
-    else:
-        print("Running on %s device" % dev)
 
 def write_thetas(writer, net, epoch):
     kvs = {}
@@ -151,8 +143,8 @@ def cli(
     time_steps,
     spike_prop
 ):
+    identify_worker()
     dev = get_device()
-    print_device(dev)
     seed_all(seed)
 
     # Load network

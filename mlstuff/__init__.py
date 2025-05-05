@@ -8,7 +8,7 @@ from random import seed as rseed
 from re import sub
 from time import time
 from torch.distributed import barrier
-from torch.nn.functional import cross_entropy, mse_loss
+from torch.nn.functional import cross_entropy
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torchvision.datasets import CIFAR10, CIFAR100
@@ -167,6 +167,14 @@ def synchronize(dev):
         torch.cuda.synchronize()
         barrier()
 
+def identify_worker():
+    dev = get_device()
+    if is_distributed(dev):
+        n_devs = int(environ.get("LOCAL_WORLD_SIZE"))
+        print("Worker %d of %d" % (dev, n_devs))
+    else:
+        print("Running on %s device" % dev)
+
 def load_cifar(data_dir, batch_size, n_cls, dev):
     t_tr, t_te = transforms_aa()
     cls = CIFAR10 if n_cls == 10 else CIFAR100
@@ -254,8 +262,6 @@ def propagate_epoch(dev, net, opt, loader, epoch, n_epochs, print_interval):
         phase = "train" if net.training else "test"
         args = phase, epoch, n_epochs
         print("== %s %3d/%3d ==" % args)
-    tot_loss = 0
-    tot_acc = 0
     n = len(loader)
     stats = EpochStats(n)
     for i, (x, y) in enumerate(islice(loader, n)):
