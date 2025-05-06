@@ -17,6 +17,7 @@ from torchvision.transforms import (
     Normalize,
     RandomCrop,
     RandomHorizontalFlip,
+    Resize,
     ToTensor,
 )
 
@@ -104,50 +105,8 @@ def rename_bu2023(net_name, d):
     return d2
 
 ########################################################################
-# Data processing
+# For distributed training
 ########################################################################
-def transforms_aa():
-    # These values should be good for CIFAR100
-    norm = Normalize(
-        [n/255. for n in [129.3, 124.1, 112.4]],
-        [n/255. for n in [68.2,  65.4,  70.4]]
-    )
-    tr  = Compose([
-        RandomCrop(32, padding=4),
-        RandomHorizontalFlip(),
-        CIFARPolicy(),
-        ToTensor(),
-        norm,
-        Cutout2(n_holes=1, length=16)
-    ])
-    te = Compose([ToTensor(), norm])
-    return tr, te
-
-def transforms_std():
-    norm = Normalize(
-        (0.4914, 0.4822, 0.4465),
-        (0.2023, 0.1994, 0.2010)
-    )
-    tr = Compose([
-        RandomCrop(32, padding = 4),
-        Cutout2(n_holes = 1, length = 8),
-        RandomHorizontalFlip(),
-        ToTensor(),
-        norm
-    ])
-    te = Compose([ToTensor(), norm])
-    return tr, te
-
-# Tie the device to the DataLoader
-class DevDataLoader(DataLoader):
-    def __init__(self, dev, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.dev = dev
-
-    def __iter__(self):
-        for x, y in super().__iter__():
-            yield x.to(self.dev), y.to(self.dev)
-
 def get_device():
     lo_rank = environ.get("LOCAL_RANK")
     if lo_rank is not None:
@@ -175,16 +134,65 @@ def identify_worker():
     else:
         print("Running on %s device" % dev)
 
-def load_cifar(data_dir, batch_size, n_cls, dev):
-    t_tr, t_te = transforms_aa()
-    cls = CIFAR10 if n_cls == 10 else CIFAR100
+########################################################################
+# Data processing
+########################################################################
 
+# Transforms are dependent on both the dataset and the network
+def transforms(ds_name, net_name):
+    is_cifar = ds_name in {"cifar10", "cifar100"}
+    if is_cifar:
+        tr_steps, te_steps = [], []
+
+        net_sizes = {
+            "alexnet" : 227,
+            #"convnext_tiny" : 224
+        }
+        size = net_sizes.get(net_name, 32)
+        if size != 32:
+            print("Resizing to %d" % size)
+            resize = Resize(size)
+            tr_steps.append(resize)
+            te_steps.append(resize)
+        norm = Normalize(
+            [n/255. for n in [129.3, 124.1, 112.4]],
+            [n/255. for n in [68.2,  65.4,  70.4]]
+        )
+        tr_steps.extend([
+            RandomCrop(size, padding = size // 8),
+            RandomHorizontalFlip(),
+            CIFARPolicy(),
+            ToTensor(),
+            norm,
+            Cutout2(n_holes=1, length = size // 2)
+        ])
+        te_steps.extend([
+            ToTensor(), norm
+        ])
+    else:
+        assert False
+    return Compose(tr_steps), Compose(te_steps)
+
+# Tie the device to the DataLoader
+class DevDataLoader(DataLoader):
+    def __init__(self, dev, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dev = dev
+
+    def __iter__(self):
+        for x, y in super().__iter__():
+            yield x.to(self.dev), y.to(self.dev)
+
+def load_data(ds_name, net_name, data_path, batch_size, dev):
+    cls = {"cifar10" : CIFAR10, "cifar100" : CIFAR100}[ds_name]
+
+    t_tr, t_te = transforms(ds_name, net_name)
     if is_primary(dev):
-        cls(data_dir, True, t_tr, download = True)
-        cls(data_dir, False, t_te, download = True)
+        cls(data_path, True, t_tr, download = True)
+        cls(data_path, False, t_te, download = True)
     synchronize(dev)
-    d_tr = cls(data_dir, True, t_tr, download = False)
-    d_te = cls(data_dir, False, t_te, download = False)
+    d_tr = cls(data_path, True, t_tr, download = False)
+    d_te = cls(data_path, False, t_te, download = False)
 
     sampler = None
     shuffle = True
@@ -206,7 +214,7 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
         drop_last = True,
         num_workers = num_workers
     )
-    if n_cls == 10:
+    if ds_name == "cifar10":
         names = [
             "airplane",
             "automobile",
@@ -220,7 +228,7 @@ def load_cifar(data_dir, batch_size, n_cls, dev):
             "truck"
         ]
     else:
-        meta = data_dir / 'cifar-100-python' / 'meta'
+        meta = data_path / 'cifar-100-python' / 'meta'
         with open(meta, 'rb') as f:
             d = load(f)
             names = d['fine_label_names']

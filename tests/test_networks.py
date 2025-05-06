@@ -1,5 +1,6 @@
 from mlstuff.networks import QCFS, QCFSNetwork, ReLU, Sequential, load_net
 from torch.nn import ReLU, Sequential
+from torchvision.transforms import Resize
 
 import torch
 
@@ -16,3 +17,7 @@ def test_qcfs():
     x = torch.rand(8, 20)
     y = net(x)
     assert y.shape == (8, 20)
+
+def test_no_resize():
+    net = load_net("alexnet", 100, 8, "lbl")
+    assert not isinstance(net[0], Resize)

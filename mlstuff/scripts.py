@@ -6,7 +6,7 @@ from mlstuff import (
     identify_worker,
     is_distributed,
     is_primary,
-    load_cifar,
+    load_data,
     loader_sample_figure,
     propagate_epoch,
     rename_bu2023,
@@ -43,12 +43,13 @@ def write_epoch_stats(
     l_tr, l_te,
     tr_stats, te_stats, max_te_acc
 ):
-    fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f, (best %5.3f)"
+    fmt = "losses %5.3f/%5.3f acc %5.3f/%5.3f in %.1f + %.1f s, (best %5.3f)"
     args = (
         tr_stats.loss,
         te_stats.loss,
         tr_stats.acc,
         te_stats.acc,
+        tr_stats.dur, te_stats.dur,
         max_te_acc
     )
     print(fmt % args)
@@ -164,7 +165,7 @@ def cli(
     # Load dataset
     data_path = Path(data_dir)
     data_path.mkdir(parents = True, exist_ok = True)
-    data = load_cifar(data_path, batch_size, n_cls, dev)
+    data = load_data(dataset, network, data_path, batch_size, dev)
     ctx.obj = dict(
         batch_size = batch_size,
         data = data,

@@ -2,7 +2,7 @@
 from math import ceil, floor, sqrt
 from torch.autograd import Function
 from torch.nn import *
-from torch.nn.init import constant_, kaiming_normal_, normal_, uniform_
+from torch.nn.init import constant_, kaiming_normal_, normal_, uniform_, zeros_
 from torchvision.transforms import Resize
 
 import torch
@@ -76,12 +76,109 @@ def is_relu(mod):
     return isinstance(mod, ReLU)
 
 ########################################################################
+# ConvNeXt from https://juliusruseckas.github.io/ml/convnext-cifar10.html
+########################################################################
+class LayerNormChannels(Module):
+    def __init__(self, channels):
+        super().__init__()
+        self.norm = LayerNorm(channels)
+
+    def forward(self, x):
+        x = x.transpose(1, -1)
+        x = self.norm(x)
+        x = x.transpose(-1, 1)
+        return x
+
+class Residual(Module):
+    def __init__(self, *layers):
+        super().__init__()
+        self.residual = Sequential(*layers)
+        self.gamma = Parameter(torch.zeros(1))
+
+    def forward(self, x):
+        return x + self.gamma * self.residual(x)
+
+class ConvNeXtBlock(Residual):
+    def __init__(self, n_in, k_size, mult=4, p_drop=0):
+        padding = (k_size - 1) // 2
+        n_hidden = n_in * mult
+        super().__init__(
+            Conv2d(n_in, n_in, k_size, padding=padding, groups=n_in),
+            LayerNormChannels(n_in),
+            Conv2d(n_in, n_hidden, 1),
+            GELU(),
+            Conv2d(n_hidden, n_in, 1),
+            Dropout(p_drop)
+        )
+
+class Stage(Sequential):
+    def __init__(self, n_in, n_out, n_blocks, k_size, p_drop=0.):
+        layers = []
+        # Maybe downsample
+        if n_in != n_out:
+            layers = [
+                LayerNormChannels(n_in),
+                Conv2d(n_in, n_out, 2, stride=2)
+            ]
+        layers += [ConvNeXtBlock(n_out, k_size, p_drop=p_drop) for _ in range(n_blocks)]
+        super().__init__(*layers)
+
+class ConvNeXtBody(Sequential):
+    def __init__(
+        self,
+        n_in,
+        channel_list,
+        n_blocks_list,
+        k_size,
+        p_drop=0.
+    ):
+        layers = []
+        for n_out, n_blocks in zip(channel_list, n_blocks_list):
+            layers.append(Stage(n_in, n_out, n_blocks, k_size, p_drop))
+            n_in = n_out
+        super().__init__(*layers)
+
+class ConvNeXt(Sequential):
+    def __init__(
+        self,
+        n_cls,
+        dims,
+        depths,
+        k_size,
+        patch_size,
+        res_p_drop
+    ):
+        super().__init__(
+            # Stem
+            Conv2d(3, dims[0], patch_size, stride=patch_size),
+            LayerNormChannels(dims[0]),
+
+            # Body
+            ConvNeXtBody(dims[0], dims, depths, k_size, res_p_drop),
+
+            # Network head
+            AdaptiveAvgPool2d(1),
+            Flatten(),
+            LayerNorm(dims[-1]),
+            Linear(dims[-1], n_cls)
+        )
+        for m in self.modules():
+            if isinstance(m, (Linear, Conv2d)):
+                normal_(m.weight, std=0.02)
+                if m.bias is not None:
+                    zeros_(m.bias)
+            elif isinstance(m, LayerNorm):
+                constant_(m.weight, 1.)
+                zeros_(m.bias)
+            elif isinstance(m, Residual):
+                zeros_(m.gamma)
+
+
+########################################################################
 # AlexNet
 ########################################################################
 def alex_net(n_cls):
     layers = [
-        # Ensure input is big enough
-        Resize((227, 227), antialias = True),
         Conv2d(3, 64, 11, 4, 2),
         ReLU(inplace = True),
         MaxPool2d(3, 2),
@@ -172,7 +269,7 @@ class Conv2dBNAct(Module):
 # Attention scores for each of the channels
 class SqueezeExcitation(Module):
     def __init__(self, n_in, n_squeezed):
-        super(SqueezeExcitation, self).__init__()
+        super().__init__()
         self.se = Sequential(
             AdaptiveAvgPool2d(1),
             Conv2d(n_in, n_squeezed, 1),
@@ -603,6 +700,14 @@ def load_base_net(net_name, n_cls):
         return alex_net(n_cls)
     elif net_name == "densenet":
         return DenseNet(n_cls)
+    elif net_name == "convnext_tiny":
+        net = ConvNeXt(
+            n_cls,
+            [64, 128, 256, 512],
+            [2, 2, 2, 2],
+            7, 1, 0.0
+        )
+        return net
     elif net_name == "efficientnet-b0":
         return EfficientNet("b0", n_cls)
     elif net_name == 'resnet18':
