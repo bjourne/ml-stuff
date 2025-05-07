@@ -89,74 +89,56 @@ class LayerNormChannels(Module):
         x = x.transpose(-1, 1)
         return x
 
-class Residual(Module):
-    def __init__(self, *layers):
-        super().__init__()
-        self.residual = Sequential(*layers)
+class ConvNeXtBlock(Sequential):
+    def __init__(self, channels, k_size, mult, p_drop):
+        padding = (k_size - 1) // 2
+        hidden_channels = channels * mult
+        super().__init__(
+            Conv2d(channels, channels, k_size, padding=padding, groups=channels),
+            LayerNormChannels(channels),
+            Conv2d(channels, hidden_channels, 1),
+            GELU(),
+            Conv2d(hidden_channels, channels, 1),
+            Dropout(p_drop)
+        )
         self.gamma = Parameter(torch.zeros(1))
 
     def forward(self, x):
-        return x + self.gamma * self.residual(x)
-
-class ConvNeXtBlock(Residual):
-    def __init__(self, n_in, k_size, mult=4, p_drop=0):
-        padding = (k_size - 1) // 2
-        n_hidden = n_in * mult
-        super().__init__(
-            Conv2d(n_in, n_in, k_size, padding=padding, groups=n_in),
-            LayerNormChannels(n_in),
-            Conv2d(n_in, n_hidden, 1),
-            GELU(),
-            Conv2d(n_hidden, n_in, 1),
-            Dropout(p_drop)
-        )
-
-class Stage(Sequential):
-    def __init__(self, n_in, n_out, n_blocks, k_size, p_drop=0.):
-        layers = []
-        # Maybe downsample
-        if n_in != n_out:
-            layers = [
-                LayerNormChannels(n_in),
-                Conv2d(n_in, n_out, 2, stride=2)
-            ]
-        layers += [ConvNeXtBlock(n_out, k_size, p_drop=p_drop) for _ in range(n_blocks)]
-        super().__init__(*layers)
+        return x + self.gamma * super().forward(x)
 
 class ConvNeXtBody(Sequential):
-    def __init__(
-        self,
-        n_in,
-        channel_list,
-        n_blocks_list,
-        k_size,
-        p_drop=0.
-    ):
+    def __init__(self, n_in, dims, depths, k_size, p_drop):
         layers = []
-        for n_out, n_blocks in zip(channel_list, n_blocks_list):
-            layers.append(Stage(n_in, n_out, n_blocks, k_size, p_drop))
+        for n_out, depth in zip(dims, depths):
+            # Maybe downsample
+            if n_in != n_out:
+                layers.extend([
+                    LayerNormChannels(n_in),
+                    Conv2d(n_in, n_out, 2, stride=2)
+                ])
+            layers.extend([
+                ConvNeXtBlock(n_out, k_size, 4, p_drop)
+                for _ in range(depth)
+            ])
             n_in = n_out
         super().__init__(*layers)
 
 class ConvNeXt(Sequential):
     def __init__(
         self,
-        n_cls,
-        dims,
-        depths,
-        k_size,
-        patch_size,
-        res_p_drop
+        n_cls, dims, depths,
+        k_size, patch_size,
+        n_in, res_p_drop
     ):
         super().__init__(
             # Stem
-            Conv2d(3, dims[0], patch_size, stride=patch_size),
+            Conv2d(n_in, dims[0], patch_size, stride=patch_size),
             LayerNormChannels(dims[0]),
 
             # Body
             ConvNeXtBody(dims[0], dims, depths, k_size, res_p_drop),
 
-            # Network head
+            # Head
             AdaptiveAvgPool2d(1),
             Flatten(),
             LayerNorm(dims[-1]),
@@ -164,14 +146,38 @@ class ConvNeXt(Sequential):
         )
         for m in self.modules():
             if isinstance(m, (Linear, Conv2d)):
-                normal_(m.weight, std=0.02)
+                init.normal_(m.weight, std=0.02)
                 if m.bias is not None:
                     zeros_(m.bias)
             elif isinstance(m, LayerNorm):
                 constant_(m.weight, 1.)
                 zeros_(m.bias)
-            elif isinstance(m, Residual):
+            if hasattr(m, "gamma"):
                 zeros_(m.gamma)
+
+    # According to some sources, selective weight decay is beneficial
+    # when optimizing with AdamW.
+    def group_parameters(self):
+        decay = set()
+        no_decay = set()
+        modules_weight_decay = Linear, Conv2d
+        modules_no_weight_decay = LayerNorm,
+
+        for m_name, m in self.named_modules():
+            for pn, _ in m.named_parameters():
+                fqn = f"{m_name}.{pn}" if m_name else pn
+                # I'm not sure about this logic
+                if isinstance(m, modules_no_weight_decay):
+                    no_decay.add(fqn)
+                elif pn.endswith("bias") or pn.endswith("gamma"):
+                    no_decay.add(fqn)
+                elif isinstance(m, modules_weight_decay):
+                    decay.add(fqn)
+
+        # sanity check
+        assert len(decay & no_decay) == 0
+        assert len(decay) + len(no_decay) == len(list(self.parameters()))
+        return decay, no_decay
 
 
 ########################################################################
@@ -701,11 +707,13 @@ def load_base_net(net_name, n_cls):
     elif net_name == "densenet":
         return DenseNet(n_cls)
     elif net_name == "convnext_tiny":
+        # Variant adapted for CIFAR.
         net = ConvNeXt(
             n_cls,
             [64, 128, 256, 512],
             [2, 2, 2, 2],
-            7, 1, 0.0
+            7, 1,
+            3, 0.0
         )
         return net
     elif net_name == "efficientnet-b0":
@@ -801,7 +809,7 @@ if __name__ == "__main__":
     from torchinfo import summary
     from calflops import calculate_flops
 
-    net = AlexNet(1000)
+    net = alex_net(1000)
     shape = 1, 3, 227, 227
     summary(net, input_size = shape, device = "cpu")
 
