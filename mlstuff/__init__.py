@@ -7,6 +7,7 @@ from pickle import load
 from random import seed as rseed
 from re import sub
 from time import time
+from torch.cuda.amp import autocast, GradScaler
 from torch.distributed import barrier
 from torch.nn.functional import cross_entropy
 from torch.utils.data import DataLoader
@@ -184,6 +185,28 @@ class DevDataLoader(DataLoader):
         for x, y in super().__iter__():
             yield x.to(self.dev), y.to(self.dev)
 
+def create_dev_data_loader(dev, ds, batch_size):
+    # Always shuffle unless distributed
+    shuffle = not is_distributed(dev)
+
+    # Figure out how to set this better
+    n_workers = 4
+
+    sampler = None
+    if is_distributed(dev):
+        sampler = DistributedSampler(dataset=ds)
+
+    return DevDataLoader(
+        dev, ds, batch_size,
+        shuffle = shuffle,
+        sampler = sampler,
+        # No reason not to, I think
+        drop_last = True,
+        num_workers = n_workers,
+        pin_memory = True,
+        persistent_workers = True
+    )
+
 def load_data(ds_name, net_name, data_path, batch_size, dev):
     cls = {"cifar10" : CIFAR10, "cifar100" : CIFAR100}[ds_name]
 
@@ -195,27 +218,8 @@ def load_data(ds_name, net_name, data_path, batch_size, dev):
     d_tr = cls(data_path, True, t_tr, download = False)
     d_te = cls(data_path, False, t_te, download = False)
 
-    sampler = None
-    shuffle = is_distributed(dev)
-    n_workers = 4
-    if is_distributed(dev):
-        sampler = DistributedSampler(dataset=d_tr)
-
-    l_tr = DevDataLoader(
-        dev, d_tr, batch_size,
-        shuffle = shuffle,
-        sampler = sampler,
-        drop_last = True,
-        num_workers = n_workers,
-        pin_memory = True
-    )
-    l_te = DevDataLoader(
-        dev, d_te, batch_size,
-        shuffle = shuffle,
-        drop_last = True,
-        num_workers = n_workers,
-        pin_memory = True
-    )
+    l_tr = create_dev_data_loader(dev, d_tr, batch_size)
+    l_te = create_dev_data_loader(dev, d_te, batch_size)
     if ds_name == "cifar10":
         names = [
             "airplane",
@@ -268,6 +272,8 @@ def forward_batch(net, opt, x, y):
     return loss.item(), acc
 
 def propagate_epoch(dev, net, opt, loader, epoch, n_epochs, print_int):
+    if is_distributed(dev):
+        loader.sampler.set_epoch(epoch)
     if is_primary(dev):
         phase = "train" if net.training else "test"
         args = phase, epoch, n_epochs

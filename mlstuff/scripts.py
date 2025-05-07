@@ -249,20 +249,18 @@ def train(
     max_te_acc = 0
     for i in range(n_epochs):
         net.train()
-        if is_distributed(dev):
-            l_tr.sampler.set_epoch(i)
         tr_stats = propagate_epoch(
             dev, net, opt, l_tr, i, n_epochs, print_interval
         )
         synchronize(dev)
+
+        net.eval()
+        with torch.no_grad():
+            te_stats = propagate_epoch(
+                dev, net, opt, l_te, i, n_epochs, print_interval
+            )
         if is_primary(dev):
-            # Ensure local network is used.
-            lnet = net.module if is_distributed(dev) else net
-            lnet.eval()
-            with torch.no_grad():
-                te_stats = propagate_epoch(
-                    dev, lnet, opt, l_te, i, n_epochs, print_interval
-                )
+            lnet = net.module
             if te_stats.acc > max_te_acc:
                 state = lnet.state_dict()
                 torch.save(state, out_dir / 'net.pth')
