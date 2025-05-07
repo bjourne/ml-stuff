@@ -108,9 +108,9 @@ def rename_bu2023(net_name, d):
 # For distributed training
 ########################################################################
 def get_device():
-    lo_rank = environ.get("LOCAL_RANK")
-    if lo_rank is not None:
-        return int(lo_rank)
+    rank = environ.get("LOCAL_RANK")
+    if rank is not None:
+        return int(rank)
     if torch.cuda.is_available():
         return "cuda"
     return "cpu"
@@ -126,13 +126,14 @@ def synchronize(dev):
         torch.cuda.synchronize()
         barrier()
 
-def identify_worker():
+def identify_device():
     dev = get_device()
     if is_distributed(dev):
         n_devs = int(environ.get("LOCAL_WORLD_SIZE"))
         print("Worker %d of %d" % (dev, n_devs))
     else:
         print("Running on %s device" % dev)
+    return dev
 
 ########################################################################
 # Data processing
@@ -195,24 +196,25 @@ def load_data(ds_name, net_name, data_path, batch_size, dev):
     d_te = cls(data_path, False, t_te, download = False)
 
     sampler = None
-    shuffle = True
-    num_workers = 8
+    shuffle = is_distributed(dev)
+    n_workers = 4
     if is_distributed(dev):
         sampler = DistributedSampler(dataset=d_tr)
-        shuffle = False
-        num_workers = 16
+
     l_tr = DevDataLoader(
         dev, d_tr, batch_size,
         shuffle = shuffle,
         sampler = sampler,
         drop_last = True,
-        num_workers = num_workers
+        num_workers = n_workers,
+        pin_memory = True
     )
     l_te = DevDataLoader(
         dev, d_te, batch_size,
-        shuffle = True,
+        shuffle = shuffle,
         drop_last = True,
-        num_workers = num_workers
+        num_workers = n_workers,
+        pin_memory = True
     )
     if ds_name == "cifar10":
         names = [
@@ -265,7 +267,7 @@ def forward_batch(net, opt, x, y):
     acc = n_corr / y.size(0)
     return loss.item(), acc
 
-def propagate_epoch(dev, net, opt, loader, epoch, n_epochs, print_interval):
+def propagate_epoch(dev, net, opt, loader, epoch, n_epochs, print_int):
     if is_primary(dev):
         phase = "train" if net.training else "test"
         args = phase, epoch, n_epochs
@@ -274,7 +276,7 @@ def propagate_epoch(dev, net, opt, loader, epoch, n_epochs, print_interval):
     stats = EpochStats(n)
     for i, (x, y) in enumerate(islice(loader, n)):
         loss, acc = forward_batch(net, opt, x, y)
-        if i % print_interval == 0 and is_primary(dev):
+        if i % print_int == 0 and is_primary(dev):
             print("%4d/%4d, loss/acc: %.4f/%.2f" % (i, n, loss, acc))
         stats.update(loss, acc)
     stats.finalize()

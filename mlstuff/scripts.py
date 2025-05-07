@@ -2,8 +2,7 @@
 #
 # DenseNet, VGG16, ResNet, etc. trained on CIFAR10/100.
 from mlstuff import (
-    get_device,
-    identify_worker,
+    identify_device,
     is_distributed,
     is_primary,
     load_data,
@@ -144,8 +143,7 @@ def cli(
     time_steps,
     spike_prop
 ):
-    identify_worker()
-    dev = get_device()
+    dev = identify_device()
     seed_all(seed)
 
     # Load network
@@ -154,6 +152,7 @@ def cli(
 
     net = net.to(dev)
     if is_distributed(dev):
+        # We don't pass other parameters since we use torchrun
         init_process_group(backend="nccl")
         torch.cuda.set_device(dev)
         net = DistributedDataParallel(
