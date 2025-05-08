@@ -170,7 +170,6 @@ def cli(
         data = data,
         dev = dev,
         ds_name = dataset,
-        is_distributed = is_distributed,
         net = net,
         net_name = network,
         print_interval = print_interval,
@@ -235,10 +234,10 @@ def train(
         batch_size, weight_decay,
         t_max, learning_rate
     )
-    log_path = Path(log_dir)
+    log_path = Path(log_dir) / dir_name
     log_path.mkdir(parents = True, exist_ok = True)
-    out_dir = log_path / dir_name
-    writer = SummaryWriter(out_dir)
+    print("Writing data to %s" % log_path)
+    writer = SummaryWriter(log_path)
     opt = SGD(
         net.parameters(),
         learning_rate,
@@ -253,6 +252,7 @@ def train(
             dev, net, opt, l_tr, i, n_epochs, print_interval
         )
         synchronize(dev)
+        sched.step()
 
         net.eval()
         with torch.no_grad():
@@ -260,17 +260,17 @@ def train(
                 dev, net, opt, l_te, i, n_epochs, print_interval
             )
         if is_primary(dev):
-            lnet = net.module
+            lnet = net.module if is_distributed(dev) else net
             if te_stats.acc > max_te_acc:
                 state = lnet.state_dict()
-                torch.save(state, out_dir / 'net.pth')
+                torch.save(state, log_path / 'net.pth')
             max_te_acc = max(max_te_acc, te_stats.acc)
             write_epoch_stats(
                 lnet, sched, writer, i, names,
                 l_tr, l_te,
                 tr_stats, te_stats, max_te_acc
             )
-        sched.step()
+
 
     if is_distributed(dev):
         synchronize(dev)
