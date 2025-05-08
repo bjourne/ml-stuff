@@ -7,7 +7,6 @@ from pickle import load
 from random import seed as rseed
 from re import sub
 from time import time
-from torch.cuda.amp import autocast, GradScaler
 from torch.distributed import barrier
 from torch.nn.functional import cross_entropy
 from torch.utils.data import DataLoader
@@ -105,6 +104,9 @@ def rename_bu2023(net_name, d):
         d2[k] = v
     return d2
 
+def param_count(net):
+    return sum(p.numel() for p in net.parameters() if p.requires_grad)
+
 ########################################################################
 # For distributed training
 ########################################################################
@@ -147,7 +149,7 @@ def transforms(ds_name, net_name):
         tr_steps, te_steps = [], []
 
         net_sizes = {
-            "alexnet" : 227,
+            "alexnet" : 224,
             #"convnext_tiny" : 224
         }
         size = net_sizes.get(net_name, 32)
@@ -203,7 +205,7 @@ def create_dev_data_loader(dev, ds, batch_size):
         # No reason not to, I think
         drop_last = True,
         num_workers = n_workers,
-        pin_memory = True,
+        pin_memory = dev != "cpu",
         persistent_workers = True
     )
 

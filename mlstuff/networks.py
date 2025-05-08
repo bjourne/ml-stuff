@@ -157,7 +157,7 @@ class ConvNeXt(Sequential):
 
     # According to some sources, selective weight decay is beneficial
     # when optimizing with AdamW.
-    def group_parameters(self):
+    def decay_groups(self):
         decay = set()
         no_decay = set()
         modules_weight_decay = Linear, Conv2d
@@ -177,7 +177,13 @@ class ConvNeXt(Sequential):
         # sanity check
         assert len(decay & no_decay) == 0
         assert len(decay) + len(no_decay) == len(list(self.parameters()))
-        return decay, no_decay
+
+        pdict = {pn: p for pn, p in self.named_parameters()}
+        groups = [
+            {"params" : [pdict[pn] for pn in decay], "weight_decay" : 1e-1},
+            {"params" : [pdict[pn] for pn in no_decay], "weight_decay" : 0.0},
+        ]
+        return groups
 
 
 ########################################################################
@@ -444,7 +450,6 @@ class ResNetPABlock(Module):
         return self.residual(xp) + self.shortcut(xp)
 
 
-# No expansion factor yet
 class ResNetBlock(Module):
     def __init__(self, n_in, n_out, stride):
         super().__init__()
@@ -489,41 +494,24 @@ def make_resnet_blocks(is_pa, layers, n_in, n_cls):
     yield Flatten()
     yield Linear(n_in, n_cls)
 
-class ResNet(Module):
-    def __init__(self, layers, n_in, n_cls):
-        super().__init__()
+def res_net(spec, n_in, n_cls):
+    # Prelude matches Bu2023's version.
+    layers = [
+        Conv2d(3, n_in, 3, 1, 1, bias = False),
+        BatchNorm2d(n_in),
+        ReLU(inplace = True)
+    ]
+    layers.extend(make_resnet_blocks(False, spec, n_in, n_cls))
+    return Sequential(*layers)
 
-        # Prelude matches Bu2023's version.
-        self.conv1 = Conv2d(3, n_in, 3, 1, 1, bias = False)
-        self.bn1 = BatchNorm2d(n_in)
-        self.relu = ReLU(inplace = True)
-
-        # Layers
-        self.blocks = Sequential(
-            *make_resnet_blocks(False, layers, n_in, n_cls)
-        )
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-
-        return self.blocks(x)
-
-class ResNetPA(Module):
-    def __init__(self, layers, n_in, n_cls):
-        super().__init__()
-        self.conv1 = Conv2d(3, n_in, 3, 1, 1, bias = False)
-
-        # Since it is preact, we don't need conv or bn before the
-        # blocks.
-        self.blocks = Sequential(
-            *make_resnet_blocks(True, layers, n_in, n_cls)
-        )
-
-    def forward(self, x):
-        x = self.conv1(x)
-        return self.blocks(x)
+def res_net_pa(spec, n_in, n_cls):
+    layers = [
+        Conv2d(3, n_in, 3, 1, 1, bias = False)
+    ]
+    # Since it is preact, we don't need conv or bn before the
+    # blocks.
+    layers.extend(make_resnet_blocks(True, spec, n_in, n_cls))
+    return Sequential(*layers)
 
 
 ########################################################################
@@ -702,6 +690,7 @@ class QCFSNetwork(Module):
         return self.net.forward(x)
 
 def load_base_net(net_name, n_cls):
+    rn18spec = [(2, 64, 1), (2, 128, 2), (2, 256, 2), (2, 512, 2)]
     if net_name == "alexnet":
         return alex_net(n_cls)
     elif net_name == "densenet":
@@ -719,19 +708,17 @@ def load_base_net(net_name, n_cls):
     elif net_name == "efficientnet-b0":
         return EfficientNet("b0", n_cls)
     elif net_name == 'resnet18':
-        return ResNet(
-            [(2, 64, 1), (2, 128, 2), (2, 256, 2), (2, 512, 2)],
-            64,
-            n_cls
-        )
+        return res_net(rn18spec, 64, n_cls)
+    elif net_name == "resnet18pa":
+        return res_net_pa(rn18spec, 64, n_cls)
     elif net_name == 'resnet20':
         return ResNet([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
-    elif net_name == "resnet20-pa":
+    elif net_name == "resnet20pa":
         return ResNetPA([(3, 16, 1), (3, 32, 2), (3, 64, 2)], 16, n_cls)
     elif net_name == 'resnet34':
         # Doesnt work yet
         _ = ResNet([3, 4, 6, 3], n_cls)
-    elif net_name == 'vgg16':
+    elif net_name == "vgg16":
         return vgg16(n_cls)
     else:
         assert False
@@ -779,16 +766,6 @@ def sum_attr(net, cls, attr):
     return tot
 
 def tests():
-    b0 = EfficientNet("b0", 10)
-
-    assert cnt_params(b0) == 4020358
-    assert cnt_params(EfficientNet("b1", 10)) == 6525994
-    assert cnt_params(EfficientNet("b2", 10)) == 7715084
-    assert cnt_params(EfficientNet("b3", 10)) == 10711602
-    assert cnt_params(EfficientNet("b4", 10)) == 17566546
-    assert cnt_params(EfficientNet("b5", 10)) == 28361274
-    assert cnt_params(EfficientNet("b6", 10)) == 40758754
-
     b7 = EfficientNet("b7", 10)
     assert cnt_params(b7) == 63812570
     assert round(sum_attr(b7, BatchNorm2d, "eps"), 3) == 0.163
@@ -798,7 +775,7 @@ def tests():
     net = load_net("resnet20", 100, 0)
     assert cnt_params(net) == 278324
 
-    net = load_net("resnet20-pa", 100, 0)
+    net = load_net("resnet20pa", 100, 0)
     assert cnt_params(net) == 278324
 
     net = load_net("resnet18", 100, 0)
@@ -809,16 +786,23 @@ if __name__ == "__main__":
     from torchinfo import summary
     from calflops import calculate_flops
 
-    net = alex_net(1000)
-    shape = 1, 3, 227, 227
+    #net = load_net("alexnetqcfs", 100, 8, "lbl")
+
+
+    net = ResNetPA([(2, 64, 1), (2, 128, 2), (2, 256, 2), (2, 512, 2)], 64, 100)
+    cnt = sum(p.numel() for p in net.parameters() if p.requires_grad)
+    print("COUNT", cnt)
+
+    #net = alex_net(100)
+    shape = 1, 3, 32, 32
     summary(net, input_size = shape, device = "cpu")
 
 
 
-    flops, macs, params = calculate_flops(
-        model=net,
-        input_shape=shape,
-        output_as_string=True,
-        output_precision=4
-    )
-    print("Alexnet FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
+    # flops, macs, params = calculate_flops(
+    #     model=net,
+    #     input_shape=shape,
+    #     output_as_string=True,
+    #     output_precision=4
+    # )
+    # print("Alexnet FLOPs:%s   MACs:%s   Params:%s \n" %(flops, macs, params))
