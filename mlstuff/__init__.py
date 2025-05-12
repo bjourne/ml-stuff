@@ -148,11 +148,9 @@ def transforms(ds_name, net_name):
     if is_cifar:
         tr_steps, te_steps = [], []
 
-        net_sizes = {
-            "alexnet" : 224,
-            #"convnext_tiny" : 224
-        }
-        size = net_sizes.get(net_name, 32)
+        size = 32
+        if net_name.startswith("alexnet"):
+            size = 224
         if size != 32:
             print("Resizing to %d" % size)
             resize = Resize(size)
